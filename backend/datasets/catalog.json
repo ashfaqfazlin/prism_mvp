@@ -1,0 +1,46 @@
+{
+  "datasets": [
+    {
+      "id": "uci_credit_approval",
+      "name": "UCI Credit Approval",
+      "description": "Classic UCI dataset for credit card application approvals. 690 instances with 15 features including credit history, employment, and prior defaults.",
+      "filename": "uci_credit_approval.csv",
+      "source": "UCI Machine Learning Repository",
+      "domain": "Credit Approval",
+      "rows": 690,
+      "features": 15,
+      "target": "A16",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.89
+    },
+    {
+      "id": "german_credit",
+      "name": "German Credit (Statlog)",
+      "description": "1000 credit applicants classified as good or bad credit risk. Includes checking account status, credit history, purpose of loan, savings, employment duration, and personal information.",
+      "filename": "german_credit.csv",
+      "source": "UCI Machine Learning Repository (Statlog)",
+      "domain": "Credit Risk",
+      "rows": 1000,
+      "features": 20,
+      "target": "class",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.78
+    },
+    {
+      "id": "taiwan_credit_card",
+      "name": "Taiwan Credit Card Default",
+      "description": "30,000 credit card clients from Taiwan (2005). Includes payment history, bill amounts, demographics. Target: default payment next month.",
+      "filename": "taiwan_credit_card.csv",
+      "source": "UCI Machine Learning Repository",
+      "domain": "Credit Card Default",
+      "rows": 30000,
+      "features": 23,
+      "target": "default_payment_next_month",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.82
+    }
+  ]
+}

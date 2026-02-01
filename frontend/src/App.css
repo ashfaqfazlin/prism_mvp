@@ -664,6 +664,231 @@ button {
   background: var(--color-surface-elevated);
 }
 
+.dataset-actions button.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+/* ============== ACTIVE DATASET BANNER ============== */
+.active-dataset-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-md);
+}
+
+.active-dataset-banner .dataset-name {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.compatibility-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
+.compatibility-badge.compatible {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.compatibility-badge.incompatible {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.change-dataset-btn {
+  margin-left: auto;
+  padding: 4px 12px !important;
+  font-size: 0.8rem !important;
+  background: transparent !important;
+  border: 1px solid var(--color-border) !important;
+}
+
+.change-dataset-btn:hover {
+  border-color: var(--color-primary) !important;
+}
+
+/* ============== DATASET PICKER ============== */
+.dataset-picker {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.picker-section {
+  margin-bottom: var(--space-lg);
+}
+
+.picker-section:last-of-type {
+  margin-bottom: var(--space-md);
+}
+
+.picker-section h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-md);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dataset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-md);
+}
+
+.dataset-card {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dataset-card:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.dataset-card.compatible {
+  border-left: 3px solid var(--color-success);
+}
+
+.dataset-card.exploration {
+  border-left: 3px solid var(--color-warning);
+}
+
+.dataset-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-sm);
+}
+
+.dataset-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--color-text);
+}
+
+.badge-small {
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.badge-small.compatible {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.badge-small.exploration {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.dataset-desc {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-sm);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dataset-meta {
+  display: flex;
+  gap: var(--space-md);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.dataset-meta .source {
+  margin-left: auto;
+  font-style: italic;
+}
+
+/* ============== RECENT UPLOADS ============== */
+.recent-uploads-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.recent-upload-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.recent-upload-item:hover {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.upload-filename {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.upload-meta {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.upload-time {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.close-picker-btn {
+  display: block;
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-top: var(--space-md);
+}
+
+.close-picker-btn:hover {
+  border-color: var(--color-text-muted);
+  color: var(--color-text);
+}
+
 .export-actions {
   display: flex;
   gap: var(--space-sm);

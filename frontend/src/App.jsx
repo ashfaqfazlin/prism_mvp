@@ -13,6 +13,11 @@ import {
   getCurrentTask,
   submitTaskResponse,
   submitPostQuestionnaire,
+  getDatasetCatalog,
+  loadDataset,
+  getRecentUploads,
+  loadRecentUpload,
+  requestDomainDecision,
 } from './api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import './App.css'
@@ -48,6 +53,12 @@ export default function App() {
   const [deciding, setDeciding] = useState(false)
   const [featureRanges, setFeatureRanges] = useState({})
   const [whatIfRow, setWhatIfRow] = useState(null)
+  
+  // ============== DATASET PICKER STATE ==============
+  const [datasetCatalog, setDatasetCatalog] = useState([])
+  const [recentUploads, setRecentUploads] = useState([])
+  const [showDatasetPicker, setShowDatasetPicker] = useState(false)
+  const [activeDataset, setActiveDataset] = useState(null)
 
   // ============== STUDY SESSION STATE ==============
   const [studySession, setStudySession] = useState(null)
@@ -304,6 +315,7 @@ export default function App() {
   const loadDefault = useCallback(async () => {
     setError('')
     setLoading(true)
+    setShowDatasetPicker(false)
     try {
       const d = await getDefaultDataset(80)
       setColumns(d.columns || FEATURE_COLS)
@@ -311,6 +323,12 @@ export default function App() {
       setSelectedIndex(null)
       setResult(null)
       setWhatIfRow(null)
+      setActiveDataset({
+        type: 'catalog',
+        id: 'uci_credit_approval',
+        name: 'UCI Credit Approval',
+        modelCompatible: true,
+      })
       const ranges = d.decision_factor_ranges ?? d.feature_ranges ?? {}
       if (Object.keys(ranges).length) setFeatureRanges(ranges)
       trackInteraction('load_dataset', { source: 'default', row_count: d.rows?.length || 0 })
@@ -329,11 +347,83 @@ export default function App() {
     } catch (_) {}
   }, [])
 
+  // Load dataset catalog and recent uploads
+  const loadDatasetCatalog = useCallback(async () => {
+    try {
+      const [catalog, uploads] = await Promise.all([
+        getDatasetCatalog(false),
+        getRecentUploads(),
+      ])
+      setDatasetCatalog(catalog.datasets || [])
+      setRecentUploads(uploads.uploads || [])
+    } catch (e) {
+      console.error('Failed to load dataset catalog:', e)
+    }
+  }, [])
+
+  // Load a dataset from catalog
+  const selectCatalogDataset = async (datasetId) => {
+    setError('')
+    setLoading(true)
+    setShowDatasetPicker(false)
+    try {
+      const result = await loadDataset(datasetId, 80)
+      setColumns(result.columns || FEATURE_COLS)
+      setRows(result.rows || [])
+      setSelectedIndex(null)
+      setResult(null)
+      setWhatIfRow(null)
+      setActiveDataset({
+        type: 'catalog',
+        id: datasetId,
+        name: result.info?.name || datasetId,
+        modelCompatible: result.model_compatible,
+      })
+      const ranges = result.feature_ranges ?? {}
+      if (Object.keys(ranges).length) setFeatureRanges(ranges)
+      trackInteraction('load_dataset', { source: 'catalog', dataset_id: datasetId, row_count: result.rows?.length || 0 })
+    } catch (e) {
+      setError(e.message)
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Load a recent upload
+  const selectRecentUpload = async (uploadId) => {
+    setError('')
+    setLoading(true)
+    setShowDatasetPicker(false)
+    try {
+      const result = await loadRecentUpload(uploadId)
+      setColumns(result.columns || FEATURE_COLS)
+      setRows(result.rows || [])
+      setSelectedIndex(null)
+      setResult(null)
+      setWhatIfRow(null)
+      setActiveDataset({
+        type: 'recent',
+        id: uploadId,
+        name: result.filename,
+        modelCompatible: true, // User uploads are assumed compatible
+      })
+      loadRanges()
+      trackInteraction('load_dataset', { source: 'recent_upload', upload_id: uploadId, row_count: result.row_count })
+    } catch (e) {
+      setError(e.message)
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const onUpload = async (e) => {
     const f = e.target?.files?.[0]
     if (!f) return
     setError('')
     setLoading(true)
+    setShowDatasetPicker(false)
     try {
       const u = await uploadCsv(f)
       if (!u.ok && u.errors?.length) throw new Error(u.errors.join('; '))
@@ -342,7 +432,15 @@ export default function App() {
       setSelectedIndex(null)
       setResult(null)
       setWhatIfRow(null)
+      setActiveDataset({
+        type: 'upload',
+        id: u.upload_id,
+        name: f.name,
+        modelCompatible: true,
+      })
       loadRanges()
+      // Refresh recent uploads list
+      getRecentUploads().then(r => setRecentUploads(r.uploads || [])).catch(() => {})
       trackInteraction('upload_dataset', { filename: f.name, row_count: u.row_count })
     } catch (e) {
       setError(e.message)
@@ -358,7 +456,13 @@ export default function App() {
     setError('')
     const startTime = Date.now()
     try {
-      const r = await requestDecision(row)
+      // Use domain-aware decision if we have an active dataset with a domain ID
+      let r
+      if (activeDataset?.id && activeDataset.type === 'catalog') {
+        r = await requestDomainDecision(activeDataset.id, row)
+      } else {
+        r = await requestDecision(row)
+      }
       setResult(r)
       const elapsed = Date.now() - startTime
       trackInteraction('view_decision', {
@@ -366,6 +470,7 @@ export default function App() {
         confidence: r.decision?.confidence,
         is_whatif: isWhatIf,
         response_time_ms: elapsed,
+        domain_id: activeDataset?.id,
       })
       return r
     } catch (e) {
@@ -373,7 +478,7 @@ export default function App() {
     } finally {
       setDeciding(false)
     }
-  }, [trackInteraction])
+  }, [trackInteraction, activeDataset])
 
   const onSelectRow = async (row, index) => {
     setSelectedIndex(index)
@@ -889,19 +994,120 @@ export default function App() {
 
       <section className="section">
         <h2>Dataset</h2>
+        
+        {/* Active dataset info */}
+        {activeDataset && (
+          <div className="active-dataset-banner">
+            <span className="dataset-name">{activeDataset.name}</span>
+            {activeDataset.modelCompatible ? (
+              <span className="compatibility-badge compatible">Model Compatible</span>
+            ) : (
+              <span className="compatibility-badge incompatible">Exploration Only</span>
+            )}
+            <button type="button" className="change-dataset-btn" onClick={() => { loadDatasetCatalog(); setShowDatasetPicker(true) }}>
+              Change Dataset
+            </button>
+          </div>
+        )}
+        
+        {/* Dataset picker actions */}
         <div className="dataset-actions">
           <button type="button" onClick={loadDefault} disabled={loading}>
             Load default (UCI Credit)
+          </button>
+          <button 
+            type="button" 
+            onClick={() => { loadDatasetCatalog(); setShowDatasetPicker(!showDatasetPicker) }} 
+            disabled={loading}
+            className={showDatasetPicker ? 'active' : ''}
+          >
+            Browse Datasets
           </button>
           <label className="button-like">
             Upload CSV
             <input type="file" accept=".csv" onChange={onUpload} disabled={loading} hidden />
           </label>
         </div>
+        
+        {/* Dataset picker dropdown */}
+        {showDatasetPicker && (
+          <div className="dataset-picker">
+            {/* Pre-loaded datasets */}
+            <div className="picker-section">
+              <h4>Credit Datasets</h4>
+              <div className="dataset-grid">
+                {datasetCatalog.map(ds => (
+                  <div 
+                    key={ds.id} 
+                    className={`dataset-card ${ds.model_compatible ? 'compatible' : 'exploration'}`}
+                    onClick={() => selectCatalogDataset(ds.id)}
+                  >
+                    <div className="dataset-card-header">
+                      <span className="dataset-title">{ds.name}</span>
+                      {ds.model_compatible ? (
+                        <span className="badge-small compatible">PRISM Ready</span>
+                      ) : (
+                        <span className="badge-small exploration">Explore</span>
+                      )}
+                    </div>
+                    <p className="dataset-desc">{ds.description}</p>
+                    <div className="dataset-meta">
+                      <span>{ds.rows?.toLocaleString()} rows</span>
+                      <span>{ds.features} features</span>
+                      <span className="source">{ds.source}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Recent uploads */}
+            {recentUploads.length > 0 && (
+              <div className="picker-section">
+                <h4>Recent Uploads</h4>
+                <div className="recent-uploads-list">
+                  {recentUploads.map(upload => (
+                    <div 
+                      key={upload.id} 
+                      className="recent-upload-item"
+                      onClick={() => selectRecentUpload(upload.id)}
+                    >
+                      <span className="upload-filename">{upload.filename}</span>
+                      <span className="upload-meta">
+                        {upload.row_count} rows • {upload.column_count} cols
+                      </span>
+                      <span className="upload-time">
+                        {new Date(upload.uploaded_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <button 
+              type="button" 
+              className="close-picker-btn" 
+              onClick={() => setShowDatasetPicker(false)}
+            >
+              Close
+            </button>
+          </div>
+        )}
+        
         {loading && <p className="muted">Loading…</p>}
+        
+        {/* Model compatibility warning */}
+        {activeDataset && !activeDataset.modelCompatible && rows.length > 0 && (
+          <div className="banner warning">
+            <strong>Exploration Mode:</strong> This dataset has a different schema than the trained model. 
+            You can explore the data, but PRISM decisions may not be accurate.
+          </div>
+        )}
+        
         {rows.length > 0 ? (
           <div className="table-wrap" onMouseEnter={() => trackSectionEnter('dataset')}>
-            <p className="muted">Select a row to review the PRISM decision.</p>
+            <p className="muted">Select a row to review the PRISM decision. Showing {Math.min(rows.length, 30)} of {rows.length} rows.</p>
             <table>
               <thead>
                 <tr>
@@ -926,7 +1132,7 @@ export default function App() {
             </table>
           </div>
         ) : (
-          <p className="muted">Load the default dataset or upload your own CSV to get started.</p>
+          <p className="muted">Load a dataset to get started. Choose from pre-loaded credit datasets or upload your own CSV.</p>
         )}
       </section>
 
@@ -1000,18 +1206,35 @@ export default function App() {
             {/* Decision Card */}
             <div className="decision-card" onMouseEnter={handleHoverStart} onMouseLeave={() => handleHoverEnd('decision')}>
               <h3>Decision</h3>
-              <p className="outcome">
-                <span className={result.decision?.decision === '+' ? 'approved' : 'rejected'}>
-                  {result.decision?.decision === '+' ? 'Approved' : 'Rejected'}
-                </span>
-                {' '}(confidence: {((result.decision?.confidence ?? 0) * 100).toFixed(1)}%)
-              </p>
-              {!isMinimalMode && (
-                <p className="muted">
-                  P(+) = {((result.decision?.probabilities?.['+'] ?? 0) * 100).toFixed(1)}%,
-                  P(−) = {((result.decision?.probabilities?.['-'] ?? 0) * 100).toFixed(1)}%
-                </p>
-              )}
+              {(() => {
+                const dec = result.decision || {}
+                const posLabel = dec.positive_label || 'Approved'
+                const negLabel = dec.negative_label || 'Rejected'
+                const decision = dec.decision || ''
+                const isPositive = decision === '+' || decision === posLabel
+                const displayDecision = decision === '+' ? 'Approved' : decision === '-' ? 'Rejected' : decision
+                const probs = dec.probabilities || {}
+                // Get probabilities - try domain labels first, then fallback to +/-
+                const posProb = probs[posLabel] ?? probs['+'] ?? 0
+                const negProb = probs[negLabel] ?? probs['-'] ?? 0
+                
+                return (
+                  <>
+                    <p className="outcome">
+                      <span className={isPositive ? 'approved' : 'rejected'}>
+                        {displayDecision}
+                      </span>
+                      {' '}(confidence: {((dec.confidence ?? 0) * 100).toFixed(1)}%)
+                    </p>
+                    {!isMinimalMode && (
+                      <p className="muted">
+                        P({posLabel}) = {(posProb * 100).toFixed(1)}%,
+                        P({negLabel}) = {(negProb * 100).toFixed(1)}%
+                      </p>
+                    )}
+                  </>
+                )
+              })()}
             </div>
 
             {/* MINIMAL MODE: Just decision */}

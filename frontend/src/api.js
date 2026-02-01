@@ -26,6 +26,55 @@ export async function getDefaultDataset(limit = 50) {
   return req(`/datasets/default?limit=${limit}`);
 }
 
+// ============== DATASET CATALOG API ==============
+
+/** Get list of available pre-loaded datasets */
+export async function getDatasetCatalog(featuredOnly = false) {
+  return req(`/datasets/catalog?featured_only=${featuredOnly}`);
+}
+
+/** Load a specific dataset by ID */
+export async function loadDataset(datasetId, limit = 80) {
+  return req(`/datasets/${datasetId}?limit=${limit}`);
+}
+
+/** Get list of recent user uploads */
+export async function getRecentUploads() {
+  return req('/datasets/recent/uploads');
+}
+
+/** Load a recent upload by ID */
+export async function loadRecentUpload(uploadId) {
+  return req(`/datasets/recent/${uploadId}`);
+}
+
+/** Clear all recent uploads */
+export async function clearRecentUploads() {
+  return req('/datasets/recent', { method: 'DELETE' });
+}
+
+// ============== DOMAIN/MODEL API ==============
+
+/** Get list of available domains with training status */
+export async function listDomains() {
+  return req('/domains');
+}
+
+/** Get info about a specific domain */
+export async function getDomainInfo(domainId) {
+  return req(`/domains/${domainId}`);
+}
+
+/** Activate a specific domain/model */
+export async function activateDomain(domainId) {
+  return req(`/domains/${domainId}/activate`, { method: 'POST' });
+}
+
+/** Request decision for a specific domain */
+export async function requestDomainDecision(domainId, row) {
+  return req(`/decision/${domainId}`, { method: 'POST', body: JSON.stringify(row) });
+}
+
 export async function getFeatureRanges() {
   return req('/feature-ranges');
 }

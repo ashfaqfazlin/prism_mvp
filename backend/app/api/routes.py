@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
@@ -40,6 +41,10 @@ from app.services import (
     study_service,
     uncertainty_stability,
 )
+from app.services.dataset_service import dataset_service
+from app.services.domain_model_service import domain_model_service
+from app.services.domain_explainability_service import domain_explainability_service
+from app.domain_config import get_domain, is_model_trained, list_domains
 
 router = APIRouter(prefix="/api", tags=["prism"])
 logger = logging.getLogger("prism")
@@ -109,7 +114,391 @@ def upload_dataset(file: UploadFile = File(...)) -> dict[str, Any]:
     if df.empty and errs:
         raise HTTPException(status_code=400, detail="; ".join(errs))
     rows = df.fillna("").head(100).to_dict(orient="records")
-    return {"ok": True, "errors": errs, "row_count": len(df), "columns": list(df.columns), "sample": rows}
+    
+    # Track in recent uploads
+    upload_entry = dataset_service.add_recent_upload(
+        filename=file.filename,
+        row_count=len(df),
+        columns=list(df.columns),
+        sample_rows=rows,
+    )
+    
+    return {
+        "ok": True, 
+        "errors": errs, 
+        "row_count": len(df), 
+        "columns": list(df.columns), 
+        "sample": rows,
+        "upload_id": upload_entry["id"],
+    }
+
+
+# ============== DATASET CATALOG ROUTES ==============
+
+@router.get("/datasets/catalog")
+def get_dataset_catalog(featured_only: bool = False) -> dict[str, Any]:
+    """Get list of available pre-loaded datasets."""
+    datasets = dataset_service.get_catalog(featured_only=featured_only)
+    return {
+        "datasets": datasets,
+        "count": len(datasets),
+    }
+
+
+@router.get("/datasets/{dataset_id}")
+def load_dataset(dataset_id: str, limit: int = 80) -> dict[str, Any]:
+    """Load a dataset by ID and return sample rows."""
+    try:
+        result = dataset_service.load_dataset(dataset_id, limit=limit)
+        _audit("load_dataset", {"dataset_id": dataset_id, "rows": len(result.get("rows", []))})
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.get("/datasets/recent/uploads")
+def get_recent_uploads() -> dict[str, Any]:
+    """Get list of recent user uploads."""
+    uploads = dataset_service.get_recent_uploads()
+    return {
+        "uploads": uploads,
+        "count": len(uploads),
+    }
+
+
+@router.get("/datasets/recent/{upload_id}")
+def load_recent_upload(upload_id: str) -> dict[str, Any]:
+    """Load a recent upload by ID."""
+    upload = dataset_service.get_recent_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail=f"Upload '{upload_id}' not found")
+    
+    return {
+        "upload_id": upload["id"],
+        "filename": upload["filename"],
+        "uploaded_at": upload["uploaded_at"],
+        "columns": upload["columns"],
+        "rows": upload["sample_rows"],
+        "row_count": upload["row_count"],
+    }
+
+
+@router.delete("/datasets/recent")
+def clear_recent_uploads() -> dict[str, str]:
+    """Clear all recent uploads."""
+    dataset_service.clear_recent_uploads()
+    return {"status": "cleared"}
+
+
+# ============== DOMAIN/MODEL ROUTES ==============
+
+@router.get("/domains")
+def list_available_domains() -> dict[str, Any]:
+    """List all available domains with training status."""
+    domains = domain_model_service.list_available_domains()
+    current = domain_model_service.current_domain_id
+    return {
+        "domains": domains,
+        "current_domain": current,
+    }
+
+
+@router.get("/domains/{domain_id}")
+def get_domain_info(domain_id: str) -> dict[str, Any]:
+    """Get info about a specific domain."""
+    domain = get_domain(domain_id)
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain_id}' not found")
+    
+    trained = is_model_trained(domain_id)
+    return {
+        "id": domain.id,
+        "name": domain.name,
+        "description": domain.description,
+        "trained": trained,
+        "feature_cols": domain.feature_cols,
+        "feature_labels": domain.feature_labels,
+        "positive_label": domain.positive_label,
+        "negative_label": domain.negative_label,
+        "categorical_cols": domain.categorical_cols,
+        "numeric_cols": domain.numeric_cols,
+    }
+
+
+@router.post("/domains/{domain_id}/activate")
+def activate_domain(domain_id: str) -> dict[str, Any]:
+    """Switch to a different domain/model."""
+    domain = get_domain(domain_id)
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain_id}' not found")
+    
+    if not is_model_trained(domain_id):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Model not trained for domain '{domain_id}'. Run training first."
+        )
+    
+    try:
+        domain_model_service.load_domain(domain_id)
+        _audit("domain_switch", {"domain_id": domain_id})
+        return {
+            "status": "activated",
+            "domain": domain_model_service.get_domain_info(),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/decision/{domain_id}")
+def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
+    """PRISM decision engine for a specific domain. Domain-aware predictions and explanations."""
+    # Load domain if needed
+    domain = get_domain(domain_id)
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain_id}' not found")
+    
+    if not is_model_trained(domain_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model not trained for domain '{domain_id}'."
+        )
+    
+    try:
+        domain_model_service.load_domain(domain_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load domain: {e}")
+    
+    # Build DataFrame from row
+    df = pd.DataFrame([row])
+    
+    # Validate and transform
+    X, df_clean, errs = domain_model_service.validate_and_transform(df)
+    
+    if X.size == 0:
+        raise HTTPException(status_code=400, detail="; ".join(errs) or "Invalid input")
+    
+    # Predict
+    dec, conf, probs = domain_model_service.predict_single(X[0])
+    
+    out: dict[str, Any] = {
+        "decision": {
+            "decision": dec,
+            "confidence": conf,
+            "probabilities": probs,
+            "domain_id": domain_id,
+            "positive_label": domain.positive_label,
+            "negative_label": domain.negative_label,
+        },
+        "domain_info": domain_model_service.get_domain_info(),
+    }
+    
+    # SHAP explanations
+    try:
+        sh = domain_explainability_service.shap_values(X[0], domain_id)
+        out["shap"] = {
+            "decision_factor_names": sh.get("feature_names", []),
+            "values": sh.get("values", []),
+            "base_value": sh.get("base_value", 0.0),
+            "decision": dec,
+            "feature_labels": sh.get("feature_labels", {}),
+        }
+    except Exception as e:
+        logger.warning("SHAP failed for domain %s: %s", domain_id, e)
+        out["shap"] = {
+            "decision_factor_names": [],
+            "values": [],
+            "base_value": 0.0,
+            "decision": dec,
+            "feature_labels": {},
+        }
+    
+    # Domain-aware explanation layer
+    row_dict = df_clean.iloc[0].to_dict() if not df_clean.empty else row
+    try:
+        expl = _domain_plain_language_explanations(out["shap"], dec, row_dict, domain, top_k=5)
+        out["explanation_layer"] = expl
+    except Exception as e:
+        logger.warning("Explanation layer failed: %s", e)
+        out["explanation_layer"] = {"bullets": [], "summary": [], "directional_reasoning": ""}
+    
+    # Uncertainty (simplified for now)
+    try:
+        is_stable = conf >= 0.6
+        conf_band = "high" if conf >= 0.85 else ("medium" if conf >= 0.6 else "low")
+        out["uncertainty"] = {
+            "confidence_band": conf_band,
+            "stable": is_stable,
+            "warning": None if is_stable else "This decision has low confidence and may be unstable.",
+            "volatility_note": None,
+        }
+    except Exception as e:
+        out["uncertainty"] = {"confidence_band": "medium", "stable": True, "warning": None, "volatility_note": None}
+    
+    # Trust calibration
+    try:
+        shap_vals = out["shap"].get("values", [])
+        trust_cal = _compute_trust_calibration(conf, shap_vals)
+        out["trust_calibration"] = trust_cal
+    except Exception as e:
+        out["trust_calibration"] = {
+            "model_confidence": conf,
+            "historical_accuracy": None,
+            "calibration_warning": None,
+            "complexity_score": 0.5,
+            "estimated_read_time_seconds": 30,
+        }
+    
+    # Counterfactual preview (simplified)
+    out["counterfactuals"] = []
+    out["counterfactual_preview"] = []
+    
+    _audit("domain_decision", {"domain_id": domain_id, "decision": dec})
+    return out
+
+
+def _decode_shap_feature_name(encoded_name: str) -> str:
+    """Decode SHAP encoded feature name to original feature name.
+    
+    Examples:
+        'num__A2' -> 'A2'
+        'cat__A5_0' -> 'A5'
+        'cat__checking_status_A11' -> 'checking_status'
+        'num__credit_amount' -> 'credit_amount'
+    """
+    import re
+    
+    # Handle num__ prefix
+    if encoded_name.startswith("num__"):
+        return encoded_name[5:]  # Remove 'num__'
+    
+    # Handle cat__ prefix with encoded categories
+    if encoded_name.startswith("cat__"):
+        rest = encoded_name[5:]  # Remove 'cat__'
+        # Try to match pattern like 'A5_0' or 'checking_status_A11'
+        # Find the last underscore that precedes a category value
+        parts = rest.rsplit("_", 1)
+        if len(parts) == 2:
+            return parts[0]
+        return rest
+    
+    # No prefix - might be direct feature name
+    return encoded_name
+
+
+def _domain_plain_language_explanations(
+    shap_data: dict[str, Any],
+    decision: str,
+    row: dict[str, Any],
+    domain,
+    top_k: int = 5
+) -> dict[str, Any]:
+    """Generate plain language explanations with domain-aware labels."""
+    feature_names = shap_data.get("decision_factor_names", [])
+    values = shap_data.get("values", [])
+    feature_labels = domain.feature_labels if domain else {}
+    
+    if not feature_names or not values:
+        return {"bullets": [], "summary": [], "directional_reasoning": ""}
+    
+    # Separate positive and negative factors
+    positive_factors = []
+    negative_factors = []
+    
+    seen_features = set()
+    
+    for encoded_name, shap_val in zip(feature_names, values):
+        # Decode the SHAP feature name to original
+        orig_feature = _decode_shap_feature_name(encoded_name)
+        
+        # Skip duplicates (same feature with different encodings)
+        if orig_feature in seen_features:
+            continue
+        seen_features.add(orig_feature)
+        
+        # Get human-readable label
+        label = feature_labels.get(orig_feature, orig_feature.replace("_", " ").title())
+        
+        # Get row value
+        row_val = row.get(orig_feature, "")
+        
+        factor_info = {
+            "feature": orig_feature,
+            "label": label,
+            "shap_value": float(shap_val),
+            "row_value": row_val,
+        }
+        
+        if shap_val > 0:
+            positive_factors.append(factor_info)
+        else:
+            negative_factors.append(factor_info)
+    
+    bullets = []
+    summary = []
+    
+    # Determine if decision is positive outcome
+    is_positive_decision = decision == domain.positive_label
+    
+    if is_positive_decision:
+        # For positive decisions: show what helped first
+        for f in positive_factors[:3]:
+            impact = "strongly" if abs(f["shap_value"]) > 0.3 else "moderately" if abs(f["shap_value"]) > 0.1 else ""
+            if f["row_value"] not in (None, "", "nan"):
+                bullet = f"Your {f['label']} ({f['row_value']}) {impact} supported the {domain.positive_label.lower()} decision.".replace("  ", " ")
+            else:
+                bullet = f"Your {f['label']} {impact} supported the {domain.positive_label.lower()} decision.".replace("  ", " ")
+            bullets.append(bullet)
+            summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "positive", "value": f["shap_value"]})
+        
+        # Then show minor negative factors
+        for f in negative_factors[:2]:
+            if f["row_value"] not in (None, "", "nan"):
+                bullet = f"Your {f['label']} ({f['row_value']}) slightly reduced confidence."
+            else:
+                bullet = f"Your {f['label']} slightly reduced confidence."
+            bullets.append(bullet)
+            summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "negative", "value": f["shap_value"]})
+        
+        # Directional reasoning for positive decision
+        if positive_factors:
+            top_factor = positive_factors[0]["label"]
+            directional = f"The decision engine predicts {domain.positive_label}. Key factors like {top_factor} contributed positively to this outcome."
+        else:
+            directional = f"The decision engine predicts {domain.positive_label} based on the overall profile assessment."
+    else:
+        # For negative decisions: show what hurt first
+        for f in negative_factors[:3]:
+            impact = "significantly" if abs(f["shap_value"]) > 0.5 else "moderately" if abs(f["shap_value"]) > 0.2 else ""
+            if f["row_value"] not in (None, "", "nan"):
+                bullet = f"Your {f['label']} ({f['row_value']}) {impact} contributed to the {domain.negative_label.lower()} prediction.".replace("  ", " ")
+            else:
+                bullet = f"Your {f['label']} {impact} contributed to the {domain.negative_label.lower()} prediction.".replace("  ", " ")
+            bullets.append(bullet)
+            summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "negative", "value": f["shap_value"]})
+        
+        # Then show factors that were favorable
+        for f in positive_factors[:2]:
+            if f["row_value"] not in (None, "", "nan"):
+                bullet = f"Your {f['label']} ({f['row_value']}) was favorable but not enough to change the outcome."
+            else:
+                bullet = f"Your {f['label']} was favorable but not enough to change the outcome."
+            bullets.append(bullet)
+            summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "positive", "value": f["shap_value"]})
+        
+        # Directional reasoning for negative decision
+        if negative_factors:
+            top_factor = negative_factors[0]["label"]
+            directional = f"The decision engine predicts {domain.negative_label}. Factors like {top_factor} weighed against a positive outcome."
+        else:
+            directional = f"The decision engine predicts {domain.negative_label} based on the overall risk assessment."
+    
+    return {
+        "bullets": bullets[:top_k],
+        "summary": summary[:top_k],
+        "directional_reasoning": directional,
+    }
 
 
 @router.post("/decision")
