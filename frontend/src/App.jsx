@@ -55,6 +55,7 @@ export default function App() {
   const [studyCondition, setStudyCondition] = useState('interactive')
   const [participantId, setParticipantId] = useState('')
   const [studyMetrics, setStudyMetrics] = useState(null)
+  const [skippedQuestionnaires, setSkippedQuestionnaires] = useState(false)
 
   // ============== PRE-QUESTIONNAIRE STATE ==============
   const [preQ, setPreQ] = useState({
@@ -161,6 +162,31 @@ export default function App() {
     setStudyPhase(PHASES.PRE_QUESTIONNAIRE)
   }
 
+  const skipQuestionnaires = async () => {
+    if (!participantId.trim()) {
+      setError('Please enter a participant ID')
+      return
+    }
+    setError('')
+    try {
+      const session = await createStudySession(participantId.trim(), studyCondition, null)
+      setStudySession(session)
+      setSkippedQuestionnaires(true)
+      sessionStartTime.current = Date.now()
+      setExplanationMode(studyCondition === 'static' ? 'static' : studyCondition === 'minimal' ? 'minimal' : 'plain')
+      setStudyPhase(PHASES.EXPLORATION)
+
+      const dataResult = await getDefaultDataset(80)
+      setColumns(dataResult.columns || FEATURE_COLS)
+      setRows(dataResult.rows || [])
+      const ranges = dataResult.decision_factor_ranges ?? dataResult.feature_ranges ?? {}
+      if (Object.keys(ranges).length) setFeatureRanges(ranges)
+      await loadRanges()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
   const submitPreQuestionnaire = async () => {
     try {
       const session = await createStudySession(participantId.trim(), studyCondition, preQ)
@@ -239,7 +265,23 @@ export default function App() {
   }
 
   const startPostQuestionnaire = () => {
-    setStudyPhase(PHASES.POST_QUESTIONNAIRE)
+    if (skippedQuestionnaires) {
+      endStudyWithoutQuestionnaire()
+    } else {
+      setStudyPhase(PHASES.POST_QUESTIONNAIRE)
+    }
+  }
+
+  const endStudyWithoutQuestionnaire = async () => {
+    try {
+      await trackInteraction('study_complete', { skipped_questionnaires: true })
+      await endStudySession(studySession.session_id)
+      const metrics = await getStudyMetrics(studySession.session_id)
+      setStudyMetrics(metrics)
+      setStudyPhase(PHASES.COMPLETE)
+    } catch (e) {
+      setError(e.message)
+    }
   }
 
   const submitPostQuestionnaireAndEnd = async () => {
@@ -286,6 +328,30 @@ export default function App() {
       if (r && Object.keys(r).length) setFeatureRanges(r)
     } catch (_) {}
   }, [])
+
+  const onUpload = async (e) => {
+    const f = e.target?.files?.[0]
+    if (!f) return
+    setError('')
+    setLoading(true)
+    try {
+      const u = await uploadCsv(f)
+      if (!u.ok && u.errors?.length) throw new Error(u.errors.join('; '))
+      setColumns(u.columns || FEATURE_COLS)
+      setRows(u.sample || [])
+      setSelectedIndex(null)
+      setResult(null)
+      setWhatIfRow(null)
+      loadRanges()
+      trackInteraction('upload_dataset', { filename: f.name, row_count: u.row_count })
+    } catch (e) {
+      setError(e.message)
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+    e.target.value = ''
+  }
 
   const runDecision = useCallback(async (row, isWhatIf = false) => {
     setDeciding(true)
@@ -421,9 +487,14 @@ export default function App() {
 
           {error && <div className="banner error">{error}</div>}
 
-          <button type="button" className="start-study-btn" onClick={startPreQuestionnaire}>
-            Continue to Background Questions
-          </button>
+          <div className="onboarding-actions">
+            <button type="button" className="start-study-btn" onClick={startPreQuestionnaire}>
+              Continue to Background Questions
+            </button>
+            <button type="button" className="skip-btn" onClick={skipQuestionnaires}>
+              Skip Questionnaires — Go to App
+            </button>
+          </div>
 
           <p className="muted ethics-note">
             By proceeding, you consent to participate in this research study.
@@ -818,8 +889,17 @@ export default function App() {
 
       <section className="section">
         <h2>Dataset</h2>
+        <div className="dataset-actions">
+          <button type="button" onClick={loadDefault} disabled={loading}>
+            Load default (UCI Credit)
+          </button>
+          <label className="button-like">
+            Upload CSV
+            <input type="file" accept=".csv" onChange={onUpload} disabled={loading} hidden />
+          </label>
+        </div>
         {loading && <p className="muted">Loading…</p>}
-        {rows.length > 0 && (
+        {rows.length > 0 ? (
           <div className="table-wrap" onMouseEnter={() => trackSectionEnter('dataset')}>
             <p className="muted">Select a row to review the PRISM decision.</p>
             <table>
@@ -845,6 +925,8 @@ export default function App() {
               </tbody>
             </table>
           </div>
+        ) : (
+          <p className="muted">Load the default dataset or upload your own CSV to get started.</p>
         )}
       </section>
 
