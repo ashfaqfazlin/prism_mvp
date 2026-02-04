@@ -3,44 +3,210 @@
     {
       "id": "uci_credit_approval",
       "name": "UCI Credit Approval",
-      "description": "Classic UCI dataset for credit card application approvals. 690 instances with 15 features including credit history, employment, and prior defaults.",
+      "description": "Credit card application approval prediction based on applicant attributes.",
       "filename": "uci_credit_approval.csv",
       "source": "UCI Machine Learning Repository",
-      "domain": "Credit Approval",
+      "domain": "Finance",
+      "domain_category": "credit",
       "rows": 690,
       "features": 15,
       "target": "A16",
       "model_compatible": true,
       "featured": true,
-      "accuracy": 0.89
+      "accuracy": 0.89,
+      "icon": "credit-card"
     },
     {
       "id": "german_credit",
-      "name": "German Credit (Statlog)",
-      "description": "1000 credit applicants classified as good or bad credit risk. Includes checking account status, credit history, purpose of loan, savings, employment duration, and personal information.",
+      "name": "German Credit Risk",
+      "description": "Credit risk classification for loan applicants based on financial and personal attributes.",
       "filename": "german_credit.csv",
       "source": "UCI Machine Learning Repository (Statlog)",
-      "domain": "Credit Risk",
+      "domain": "Finance",
+      "domain_category": "credit",
       "rows": 1000,
       "features": 20,
       "target": "class",
       "model_compatible": true,
       "featured": true,
-      "accuracy": 0.78
+      "accuracy": 0.78,
+      "icon": "credit-card"
     },
     {
       "id": "taiwan_credit_card",
       "name": "Taiwan Credit Card Default",
-      "description": "30,000 credit card clients from Taiwan (2005). Includes payment history, bill amounts, demographics. Target: default payment next month.",
+      "description": "Predict credit card default based on payment history and bill amounts.",
       "filename": "taiwan_credit_card.csv",
       "source": "UCI Machine Learning Repository",
-      "domain": "Credit Card Default",
+      "domain": "Finance",
+      "domain_category": "credit",
       "rows": 30000,
       "features": 23,
       "target": "default_payment_next_month",
       "model_compatible": true,
       "featured": true,
-      "accuracy": 0.82
+      "accuracy": 0.82,
+      "icon": "credit-card"
+    },
+    {
+      "id": "bank_marketing",
+      "name": "Bank Marketing",
+      "description": "Predict if a client will subscribe to a term deposit based on marketing campaign data.",
+      "filename": "bank_marketing.csv",
+      "source": "UCI Machine Learning Repository",
+      "domain": "Finance",
+      "domain_category": "marketing",
+      "rows": 41188,
+      "features": 20,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.92,
+      "icon": "bank"
+    },
+    {
+      "id": "heart_disease",
+      "name": "Heart Disease Prediction",
+      "description": "Predict presence of heart disease based on clinical indicators like blood pressure, cholesterol, and ECG results.",
+      "filename": "heart_disease.csv",
+      "source": "UCI Machine Learning Repository (Cleveland)",
+      "domain": "Healthcare",
+      "domain_category": "diagnosis",
+      "rows": 303,
+      "features": 13,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.85,
+      "icon": "heart"
+    },
+    {
+      "id": "diabetes",
+      "name": "Diabetes Prediction",
+      "description": "Predict diabetes onset based on diagnostic measurements like glucose, BMI, and insulin levels.",
+      "filename": "diabetes.csv",
+      "source": "National Institute of Diabetes (Pima Indians)",
+      "domain": "Healthcare",
+      "domain_category": "diagnosis",
+      "rows": 768,
+      "features": 8,
+      "target": "outcome",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.75,
+      "icon": "activity"
+    },
+    {
+      "id": "breast_cancer",
+      "name": "Breast Cancer Diagnosis",
+      "description": "Classify breast mass as malignant or benign based on digitized cell nuclei features from fine needle aspirate.",
+      "filename": "breast_cancer.csv",
+      "source": "UCI Machine Learning Repository (Wisconsin)",
+      "domain": "Healthcare",
+      "domain_category": "diagnosis",
+      "rows": 569,
+      "features": 30,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.97,
+      "icon": "microscope"
+    },
+    {
+      "id": "student_performance",
+      "name": "Student Performance",
+      "description": "Predict student pass/fail outcome based on academic, social, and family background factors.",
+      "filename": "student_performance.csv",
+      "source": "UCI Machine Learning Repository",
+      "domain": "Education",
+      "domain_category": "academic",
+      "rows": 395,
+      "features": 30,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.63,
+      "icon": "graduation-cap"
+    },
+    {
+      "id": "hr_attrition",
+      "name": "Employee Attrition",
+      "description": "Predict employee attrition based on HR analytics including job satisfaction, work-life balance, and compensation.",
+      "filename": "hr_attrition.csv",
+      "source": "IBM HR Analytics (Kaggle)",
+      "domain": "Employment",
+      "domain_category": "hr",
+      "rows": 1470,
+      "features": 30,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.86,
+      "icon": "users"
+    },
+    {
+      "id": "insurance_coil",
+      "name": "Caravan Insurance",
+      "description": "Predict caravan insurance policy purchase based on customer socio-demographics and product ownership.",
+      "filename": "insurance_coil.csv",
+      "source": "UCI Machine Learning Repository (COIL 2000)",
+      "domain": "Insurance",
+      "domain_category": "policy",
+      "rows": 5822,
+      "features": 85,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.94,
+      "icon": "shield"
+    },
+    {
+      "id": "recidivism_compas",
+      "name": "Recidivism Prediction",
+      "description": "Predict likelihood of reoffending within two years based on criminal history and demographics (COMPAS dataset).",
+      "filename": "recidivism_compas.csv",
+      "source": "ProPublica COMPAS Analysis",
+      "domain": "Legal",
+      "domain_category": "criminal_justice",
+      "rows": 7214,
+      "features": 8,
+      "target": "target",
+      "model_compatible": true,
+      "featured": true,
+      "accuracy": 0.69,
+      "icon": "scale"
     }
-  ]
+  ],
+  "domain_categories": {
+    "Finance": {
+      "color": "#22c55e",
+      "icon": "dollar-sign",
+      "datasets": ["uci_credit_approval", "german_credit", "taiwan_credit_card", "bank_marketing"]
+    },
+    "Healthcare": {
+      "color": "#ef4444",
+      "icon": "heart-pulse",
+      "datasets": ["heart_disease", "diabetes", "breast_cancer"]
+    },
+    "Education": {
+      "color": "#3b82f6",
+      "icon": "book-open",
+      "datasets": ["student_performance"]
+    },
+    "Employment": {
+      "color": "#8b5cf6",
+      "icon": "briefcase",
+      "datasets": ["hr_attrition"]
+    },
+    "Legal": {
+      "color": "#64748b",
+      "icon": "gavel",
+      "datasets": ["recidivism_compas"]
+    },
+    "Insurance": {
+      "color": "#f59e0b",
+      "icon": "shield-check",
+      "datasets": ["insurance_coil"]
+    }
+  }
 }

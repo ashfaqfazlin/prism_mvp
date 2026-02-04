@@ -82,6 +82,8 @@ class DatasetService:
 
     def load_dataset(self, dataset_id: str, limit: int = 100) -> dict[str, Any]:
         """Load a dataset by ID and return sample rows."""
+        from app.domain_config import get_domain
+        
         info = self.get_dataset_info(dataset_id)
         if not info:
             raise ValueError(f"Dataset '{dataset_id}' not found in catalog")
@@ -99,24 +101,65 @@ class DatasetService:
         sample_df = df.head(limit)
         rows = sample_df.to_dict(orient="records")
         
-        # Compute numeric ranges for sliders
+        # Compute numeric ranges for sliders (with labels from domain config)
+        domain = get_domain(dataset_id)
         numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
+        
+        # If domain exists, prioritize its numeric_cols to ensure correct feature order
+        if domain and domain.numeric_cols:
+            # Filter to only columns that exist and are numeric
+            numeric_cols = [c for c in domain.numeric_cols if c in df.columns]
+        
         ranges = {}
         for col in numeric_cols:
+            label = col.replace("_", " ").title()
+            if domain and domain.feature_labels:
+                label = domain.feature_labels.get(col, label)
+            vals = pd.to_numeric(df[col], errors="coerce").dropna()
+            if len(vals) == 0:
+                continue
             ranges[col] = {
-                "min": float(df[col].min()),
-                "max": float(df[col].max()),
-                "mean": float(df[col].mean())
+                "min": float(vals.min()),
+                "max": float(vals.max()),
+                "mean": float(vals.mean()),
+                "label": label
             }
+        
+        # Enhanced info with domain labels
+        enhanced_info = {**info}
+        if domain:
+            enhanced_info["positive_label"] = domain.positive_label
+            enhanced_info["negative_label"] = domain.negative_label
+            enhanced_info["feature_labels"] = domain.feature_labels
+
+        # Dataset summary: class balance (if target column exists)
+        summary: dict[str, Any] = {
+            "row_count": len(df),
+            "feature_count": len(columns),
+        }
+        target_col = info.get("target") or (domain.target_col if domain else None)
+        if target_col and target_col in df.columns:
+            value_counts = df[target_col].value_counts()
+            summary["class_balance"] = {str(k): int(v) for k, v in value_counts.items()}
+            summary["target_column"] = target_col
+            if domain:
+                pos_val = getattr(domain, "positive_value", None)
+                neg_val = getattr(domain, "negative_value", None)
+                pos_count = value_counts.get(pos_val, 0) if pos_val is not None else None
+                neg_count = value_counts.get(neg_val, 0) if neg_val is not None else None
+                if pos_count is not None and neg_count is not None:
+                    summary["positive_count"] = int(pos_count)
+                    summary["negative_count"] = int(neg_count)
         
         return {
             "dataset_id": dataset_id,
-            "info": info,
+            "info": enhanced_info,
             "columns": columns,
             "rows": rows,
             "row_count": len(df),
             "feature_ranges": ranges,
-            "model_compatible": info.get("model_compatible", False)
+            "model_compatible": info.get("model_compatible", False),
+            "summary": summary,
         }
 
     def add_recent_upload(

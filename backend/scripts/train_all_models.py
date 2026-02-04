@@ -37,6 +37,14 @@ def load_dataset(domain: DomainConfig) -> pd.DataFrame:
         "uci_credit_approval": "uci_credit_approval.csv",
         "german_credit": "german_credit.csv",
         "taiwan_credit_card": "taiwan_credit_card.csv",
+        "heart_disease": "heart_disease.csv",
+        "diabetes": "diabetes.csv",
+        "breast_cancer": "breast_cancer.csv",
+        "bank_marketing": "bank_marketing.csv",
+        "student_performance": "student_performance.csv",
+        "hr_attrition": "hr_attrition.csv",
+        "insurance_coil": "insurance_coil.csv",
+        "recidivism_compas": "recidivism_compas.csv",
     }
     
     filename = filename_map.get(domain.id)

@@ -53,17 +53,32 @@ class TrustInAutomation(BaseModel):
 
 
 class UsabilityQuick(BaseModel):
-    """Quick usability assessment - 2 key items."""
+    """Quick usability assessment - 2 key items. Kept for backward compatibility."""
     easy_to_use: int = Field(..., ge=1, le=5, description="The system was easy to use")
     would_use_again: int = Field(..., ge=1, le=5, description="I would use this system again")
 
 
+# System Usability Scale (SUS) - 10 items, 1-5 each. Score = (sum of contributions) * 2.5 → 0-100
+class SUS(BaseModel):
+    """Full System Usability Scale (10 items). Odd items positive, even negative; 1-5 scale."""
+    q1: int = Field(..., ge=1, le=5, description="I think that I would like to use this system frequently")
+    q2: int = Field(..., ge=1, le=5, description="I found the system unnecessarily complex")
+    q3: int = Field(..., ge=1, le=5, description="I thought the system was easy to use")
+    q4: int = Field(..., ge=1, le=5, description="I think that I would need the support of a technical person to be able to use this system")
+    q5: int = Field(..., ge=1, le=5, description="I found the various functions in this system were well integrated")
+    q6: int = Field(..., ge=1, le=5, description="I thought there was too much inconsistency in this system")
+    q7: int = Field(..., ge=1, le=5, description="I would imagine that most people would learn to use this system very quickly")
+    q8: int = Field(..., ge=1, le=5, description="I found the system very cumbersome to use")
+    q9: int = Field(..., ge=1, le=5, description="I felt very confident using the system")
+    q10: int = Field(..., ge=1, le=5, description="I needed to learn a lot of things before I could get going with this system")
+
+
 class PostStudyQuestionnaire(BaseModel):
-    """Trimmed post-study questionnaire - 9 items + 2 open-ended."""
+    """Post-study questionnaire: NASA-TLX, Trust, full SUS (10 items) or legacy usability, and open-ended."""
     nasa_tlx: NasaTLX
     trust: TrustInAutomation
-    usability: UsabilityQuick
-    
+    sus: SUS | None = Field(default=None, description="Full System Usability Scale (10 items)")
+    usability: UsabilityQuick | None = Field(default=None, description="Legacy 2-item; used if sus not provided")
     # Open-ended (optional)
     most_helpful_feature: str | None = Field(default=None, description="What was most helpful?")
     improvement_suggestions: str | None = Field(default=None, description="How could we improve?")
@@ -137,8 +152,9 @@ class RichInteraction(BaseModel):
 class StudySessionCreate(BaseModel):
     """Create a new study session."""
     participant_id: str = Field(..., description="Unique participant identifier")
-    condition: StudyCondition = Field(..., description="Study condition")
+    condition: StudyCondition = Field(..., description="Study condition (primary; used for non-within-subjects)")
     pre_questionnaire: PreStudyQuestionnaire | None = Field(default=None, description="Pre-study questionnaire responses")
+    within_subjects: bool = Field(default=False, description="If True, tasks span multiple conditions (blocks) for within-subjects design")
 
 
 class StudySessionResponse(BaseModel):

@@ -12,6 +12,22 @@ from typing import Any
 
 from app.config import settings
 
+# Lazy imports to avoid circular deps and optional model dependency
+def _get_model_decision_for_row_index(row_index: int) -> str | None:
+    """Get model decision (Approve/Reject) for default dataset row. Returns None if unavailable."""
+    try:
+        from app.services.data_service import data_service
+        from app.services.model_service import model_service
+        df = data_service.load_default_dataset()
+        if row_index < 0 or row_index >= len(df):
+            return None
+        row = df.iloc[row_index: row_index + 1]
+        X = data_service.transform(row)
+        dec, _, _ = model_service.predict_single(X[0])
+        return "Approve" if dec == "+" else "Reject"
+    except Exception:
+        return None
+
 # Study data storage paths
 STUDY_DIR = Path(settings.base_dir) / "study_data"
 SESSIONS_FILE = STUDY_DIR / "sessions.jsonl"
@@ -29,6 +45,8 @@ DEFAULT_CONFIG = {
     "attention_check_frequency": 2,  # Attention check every 2 tasks
     "randomize_task_order": True,
     "random_seed": 42,
+    "within_subjects": False,  # If True, same participant sees multiple conditions (blocks)
+    "within_subjects_blocks": [{"condition": "static", "tasks": 2}, {"condition": "interactive", "tasks": 2}],
 }
 
 # Predefined evaluation tasks
@@ -178,13 +196,18 @@ class StudyService:
         participant_id: str,
         condition: str,
         pre_questionnaire: dict[str, Any] | None = None,
+        within_subjects: bool | None = None,
     ) -> dict[str, Any]:
-        """Create a new study session."""
+        """Create a new study session. If within_subjects=True, tasks span multiple conditions (blocks)."""
         session_id = str(uuid.uuid4())[:8]
         now = datetime.utcnow().isoformat()
+        use_within = within_subjects if within_subjects is not None else self._config.get("within_subjects", False)
 
         # Generate task sequence for this session
-        tasks = self._generate_task_sequence(condition)
+        if use_within:
+            tasks = self._generate_task_sequence_within_subjects()
+        else:
+            tasks = self._generate_task_sequence(condition)
 
         session = {
             "session_id": session_id,
@@ -271,10 +294,50 @@ class StudyService:
             if regular_tasks:
                 task_template = regular_tasks[i % len(regular_tasks)].copy()
                 task_template["task_id"] = f"{task_template['task_id']}_{i}"
-                task_template["row_index"] = row_indices[i % len(row_indices)]
+                row_idx = row_indices[i % len(row_indices)]
+                task_template["row_index"] = row_idx
                 task_template["sequence_index"] = len(tasks)
+                if task_template["task_type"] == "decision":
+                    task_template["correct_answer"] = _get_model_decision_for_row_index(row_idx)
                 tasks.append(task_template)
 
+        return tasks
+
+    def _generate_task_sequence_within_subjects(self) -> list[dict[str, Any]]:
+        """Generate tasks across multiple conditions (within-subjects). Each task has a 'condition' field."""
+        tasks = []
+        blocks = self._config.get("within_subjects_blocks") or [
+            {"condition": "static", "tasks": 2},
+            {"condition": "interactive", "tasks": 2},
+        ]
+        regular_tasks = [t for t in EVALUATION_TASKS if t["task_type"] != "attention_check"]
+        attention_checks = [t for t in EVALUATION_TASKS if t["task_type"] == "attention_check"]
+        rng = random.Random(self._config["random_seed"])
+        row_indices = list(range(50))
+        if self._config["randomize_task_order"]:
+            rng.shuffle(row_indices)
+        attention_freq = self._config["attention_check_frequency"]
+        seq_idx = 0
+        for block in blocks:
+            block_condition = block.get("condition", "interactive")
+            n_slots = block.get("tasks", 2)
+            for slot in range(n_slots):
+                if self._config["include_attention_checks"] and (seq_idx + 1) % attention_freq == 0:
+                    attn = rng.choice(attention_checks).copy()
+                    attn["sequence_index"] = seq_idx
+                    attn["condition"] = block_condition
+                    tasks.append(attn)
+                else:
+                    task_template = regular_tasks[seq_idx % len(regular_tasks)].copy()
+                    task_template["task_id"] = f"{task_template['task_id']}_{seq_idx}_{block_condition}"
+                    row_idx = row_indices[seq_idx % len(row_indices)]
+                    task_template["row_index"] = row_idx
+                    task_template["sequence_index"] = seq_idx
+                    task_template["condition"] = block_condition
+                    if task_template["task_type"] == "decision":
+                        task_template["correct_answer"] = _get_model_decision_for_row_index(row_idx)
+                    tasks.append(task_template)
+                seq_idx += 1
         return tasks
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
@@ -431,6 +494,8 @@ class StudyService:
             "time_taken_seconds": time_taken_seconds,
             "timestamp": datetime.utcnow().isoformat(),
         }
+        if task.get("condition") is not None:
+            result["task_condition"] = task["condition"]
 
         # Save response
         if session_id not in self._task_responses:
@@ -453,17 +518,20 @@ class StudyService:
         session["current_task_index"] += 1
 
         # Log interaction
+        details = {
+            "task_id": task_id,
+            "task_type": task["task_type"],
+            "is_correct": is_correct,
+            "time_taken_seconds": time_taken_seconds,
+        }
+        if task.get("condition") is not None:
+            details["task_condition"] = task["condition"]
         self._log_interaction({
             "session_id": session_id,
             "participant_id": session["participant_id"],
             "action": "task_submit",
             "timestamp": result["timestamp"],
-            "details": {
-                "task_id": task_id,
-                "task_type": task["task_type"],
-                "is_correct": is_correct,
-                "time_taken_seconds": time_taken_seconds,
-            },
+            "details": details,
         })
 
         return {
@@ -694,10 +762,14 @@ class StudyService:
                 if "trust" in q:
                     for k, v in q["trust"].items():
                         flat[f"trust_{k}"] = v
-                # Flatten SUS
+                # Flatten SUS (full 10-item)
                 if "sus" in q:
                     for k, v in q["sus"].items():
                         flat[f"sus_{k}"] = v
+                # Flatten legacy usability (2-item) if present
+                if "usability" in q:
+                    for k, v in q["usability"].items():
+                        flat[f"usability_{k}"] = v
                 # Open-ended
                 for k in ["most_helpful_feature", "most_confusing_aspect", "improvement_suggestions", "additional_comments"]:
                     flat[k] = q.get(k, "")

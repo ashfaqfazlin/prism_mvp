@@ -38,6 +38,11 @@ export async function loadDataset(datasetId, limit = 80) {
   return req(`/datasets/${datasetId}?limit=${limit}`);
 }
 
+/** Get dataset-level (global) explainability: mean absolute SHAP across sample */
+export async function getGlobalExplainability(datasetId, sampleSize = 50) {
+  return req(`/datasets/${datasetId}/global-explainability?sample_size=${sampleSize}`);
+}
+
 /** Get list of recent user uploads */
 export async function getRecentUploads() {
   return req('/datasets/recent/uploads');
@@ -51,6 +56,48 @@ export async function loadRecentUpload(uploadId) {
 /** Clear all recent uploads */
 export async function clearRecentUploads() {
   return req('/datasets/recent', { method: 'DELETE' });
+}
+
+// ============== UPLOAD TRAINING API ==============
+
+/** Analyze an uploaded dataset to detect schema and suggest target */
+export async function analyzeUpload(uploadId) {
+  return req(`/datasets/upload/${uploadId}/analyze`);
+}
+
+/** Get information about a potential target column */
+export async function getTargetInfo(uploadId, targetCol) {
+  return req(`/datasets/upload/${uploadId}/target-info?target_col=${encodeURIComponent(targetCol)}`);
+}
+
+/** Configure an upload for training */
+export async function configureUpload(uploadId, config) {
+  return req(`/datasets/upload/${uploadId}/configure`, {
+    method: 'POST',
+    body: JSON.stringify(config),
+  });
+}
+
+/** Train a model on the configured upload */
+export async function trainUpload(uploadId, asyncMode = false) {
+  return req(`/datasets/upload/${uploadId}/train?async_mode=${asyncMode}`, {
+    method: 'POST',
+  });
+}
+
+/** Get training status for an upload */
+export async function getTrainingStatus(uploadId) {
+  return req(`/datasets/upload/${uploadId}/status`);
+}
+
+/** List all trained dynamic domains */
+export async function listTrainedUploads() {
+  return req('/datasets/upload/trained');
+}
+
+/** Delete a dynamic domain and its trained model */
+export async function deleteUploadDomain(uploadId) {
+  return req(`/datasets/upload/${uploadId}`, { method: 'DELETE' });
 }
 
 // ============== DOMAIN/MODEL API ==============
@@ -73,6 +120,11 @@ export async function activateDomain(domainId) {
 /** Request decision for a specific domain */
 export async function requestDomainDecision(domainId, row) {
   return req(`/decision/${domainId}`, { method: 'POST', body: JSON.stringify(row) });
+}
+
+/** Batch predict outcomes for multiple rows (fast preview, no full explanations) */
+export async function requestBatchPredictions(domainId, rows) {
+  return req(`/decision/${domainId}/batch`, { method: 'POST', body: JSON.stringify(rows) });
 }
 
 export async function getFeatureRanges() {
@@ -121,20 +173,37 @@ export async function exportReport(format, data) {
   URL.revokeObjectURL(a.href);
 }
 
+/** Bulk export: rows + predictions as CSV */
+export async function exportBulk({ columns, rows, predictions }) {
+  const res = await fetch(`${BASE}/export/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format: 'csv', columns, rows, predictions }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'prism_bulk_export.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
 export async function submitFeedback(payload) {
   return req('/feedback', { method: 'POST', body: JSON.stringify(payload) });
 }
 
 // ============== STUDY MANAGEMENT API ==============
 
-/** Create a new study session with optional pre-questionnaire */
-export async function createStudySession(participantId, condition, preQuestionnaire = null) {
+/** Create a new study session with optional pre-questionnaire and within-subjects flag */
+export async function createStudySession(participantId, condition, preQuestionnaire = null, withinSubjects = false) {
   return req('/study/session', {
     method: 'POST',
     body: JSON.stringify({
       participant_id: participantId,
       condition,
       pre_questionnaire: preQuestionnaire,
+      within_subjects: withinSubjects,
     }),
   });
 }

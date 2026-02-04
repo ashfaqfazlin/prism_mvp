@@ -158,6 +158,37 @@ def load_dataset(dataset_id: str, limit: int = 80) -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=str(e))
 
 
+@router.get("/datasets/{dataset_id}/global-explainability")
+def get_global_explainability(dataset_id: str, sample_size: int = 50) -> dict[str, Any]:
+    """Dataset-level explainability: mean absolute SHAP across a sample (global feature importance)."""
+    domain = get_domain(dataset_id)
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' not found")
+    if not is_model_trained(dataset_id):
+        return {
+            "dataset_id": dataset_id,
+            "feature_names": [],
+            "mean_abs_shap": [],
+            "feature_labels": {},
+            "sample_size": 0,
+            "message": "Model not trained for this dataset",
+        }
+    try:
+        result = domain_explainability_service.global_feature_importance(dataset_id, sample_size=sample_size)
+        result["dataset_id"] = dataset_id
+        return result
+    except Exception as e:
+        logger.warning("Global explainability failed for %s: %s", dataset_id, e)
+        return {
+            "dataset_id": dataset_id,
+            "feature_names": [],
+            "mean_abs_shap": [],
+            "feature_labels": {},
+            "sample_size": 0,
+            "error": str(e),
+        }
+
+
 @router.get("/datasets/recent/uploads")
 def get_recent_uploads() -> dict[str, Any]:
     """Get list of recent user uploads."""
@@ -190,6 +221,184 @@ def clear_recent_uploads() -> dict[str, str]:
     """Clear all recent uploads."""
     dataset_service.clear_recent_uploads()
     return {"status": "cleared"}
+
+
+# ============== UPLOAD TRAINING ROUTES ==============
+
+from app.services.auto_schema_service import auto_schema_service
+from app.services.dynamic_domain_service import dynamic_domain_service
+from app.services.auto_trainer_service import auto_trainer_service
+from pydantic import BaseModel, Field
+
+
+class UploadConfigureRequest(BaseModel):
+    """Request to configure an upload for training."""
+    target_col: str
+    positive_value: Any
+    negative_value: Any
+    positive_label: str = "Positive"
+    negative_label: str = "Negative"
+    name: str | None = None
+    description: str | None = None
+
+
+@router.get("/datasets/upload/{upload_id}/analyze")
+def analyze_upload(upload_id: str) -> dict[str, Any]:
+    """Analyze an uploaded dataset to detect schema and suggest target."""
+    upload = dataset_service.get_recent_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail=f"Upload '{upload_id}' not found")
+    
+    # Create DataFrame from stored sample rows
+    df = pd.DataFrame(upload["sample_rows"])
+    
+    # Analyze schema
+    analysis = dynamic_domain_service.analyze_upload(upload_id, df)
+    
+    return analysis
+
+
+@router.get("/datasets/upload/{upload_id}/target-info")
+def get_target_info(upload_id: str, target_col: str) -> dict[str, Any]:
+    """Get information about a potential target column."""
+    upload = dataset_service.get_recent_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail=f"Upload '{upload_id}' not found")
+    
+    df = pd.DataFrame(upload["sample_rows"])
+    
+    if target_col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Column '{target_col}' not found")
+    
+    info = dynamic_domain_service.get_target_info(upload_id, df, target_col)
+    
+    # Add suggested labels based on data
+    labels = auto_schema_service.suggest_labels(df)
+    info["suggested_labels"] = labels
+    
+    return info
+
+
+@router.post("/datasets/upload/{upload_id}/configure")
+def configure_upload(upload_id: str, config: UploadConfigureRequest) -> dict[str, Any]:
+    """Configure an upload for training by specifying target and labels."""
+    upload = dataset_service.get_recent_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail=f"Upload '{upload_id}' not found")
+    
+    df = pd.DataFrame(upload["sample_rows"])
+    
+    if config.target_col not in df.columns:
+        raise HTTPException(status_code=400, detail=f"Target column '{config.target_col}' not found")
+    
+    # Create dynamic domain configuration
+    domain_config = dynamic_domain_service.create_domain(
+        upload_id=upload_id,
+        df=df,
+        target_col=config.target_col,
+        positive_value=config.positive_value,
+        negative_value=config.negative_value,
+        positive_label=config.positive_label,
+        negative_label=config.negative_label,
+        name=config.name or upload.get("filename", "Custom Dataset"),
+        description=config.description,
+    )
+    
+    return {
+        "status": "configured",
+        "upload_id": upload_id,
+        "domain_id": domain_config.domain_id,
+        "config": {
+            "name": domain_config.name,
+            "target_col": domain_config.target_col,
+            "feature_cols": domain_config.feature_cols,
+            "categorical_cols": domain_config.categorical_cols,
+            "numeric_cols": domain_config.numeric_cols,
+            "positive_label": domain_config.positive_label,
+            "negative_label": domain_config.negative_label,
+        },
+    }
+
+
+@router.post("/datasets/upload/{upload_id}/train")
+def train_upload(upload_id: str, async_mode: bool = False) -> dict[str, Any]:
+    """Train a model on the configured upload."""
+    # Get domain config
+    domain_config = dynamic_domain_service.get_domain(upload_id)
+    if not domain_config:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Upload '{upload_id}' not configured. Call /configure first."
+        )
+    
+    # Get upload data
+    upload = dataset_service.get_recent_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail=f"Upload '{upload_id}' not found")
+    
+    df = pd.DataFrame(upload["sample_rows"])
+    
+    # Start training
+    if async_mode:
+        job = auto_trainer_service.start_training(upload_id, df, domain_config)
+    else:
+        job = auto_trainer_service.start_training_sync(upload_id, df, domain_config)
+    
+    return {
+        "status": job.status.value,
+        "job_id": job.job_id,
+        "upload_id": upload_id,
+        "domain_id": domain_config.domain_id,
+        "accuracy": job.accuracy,
+        "progress": job.progress,
+        "error": job.error,
+    }
+
+
+@router.get("/datasets/upload/{upload_id}/status")
+def get_training_status(upload_id: str) -> dict[str, Any]:
+    """Get the training status for an upload."""
+    # Check if configured
+    domain_config = dynamic_domain_service.get_domain(upload_id)
+    if not domain_config:
+        return {
+            "status": "not_configured",
+            "upload_id": upload_id,
+            "is_trained": False,
+        }
+    
+    # Check for active training job
+    job = auto_trainer_service.get_job_by_upload(upload_id)
+    
+    return {
+        "status": job.status.value if job else ("trained" if domain_config.is_trained else "configured"),
+        "upload_id": upload_id,
+        "domain_id": domain_config.domain_id,
+        "is_trained": domain_config.is_trained,
+        "accuracy": domain_config.training_accuracy or (job.accuracy if job else None),
+        "progress": job.progress if job else (100 if domain_config.is_trained else 0),
+        "error": job.error if job else None,
+    }
+
+
+@router.get("/datasets/upload/trained")
+def list_trained_uploads() -> dict[str, Any]:
+    """List all trained dynamic domains."""
+    domains = dynamic_domain_service.list_domains()
+    trained = [d for d in domains if d["is_trained"]]
+    return {
+        "domains": trained,
+        "count": len(trained),
+    }
+
+
+@router.delete("/datasets/upload/{upload_id}")
+def delete_upload_domain(upload_id: str) -> dict[str, str]:
+    """Delete a dynamic domain and its trained model."""
+    deleted = dynamic_domain_service.delete_domain(upload_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Domain for upload '{upload_id}' not found")
+    return {"status": "deleted"}
 
 
 # ============== DOMAIN/MODEL ROUTES ==============
@@ -294,7 +503,8 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
         "domain_info": domain_model_service.get_domain_info(),
     }
     
-    # SHAP explanations
+    # SHAP explanations and explanation fidelity
+    explanation_fidelity: dict[str, Any] = {}
     try:
         sh = domain_explainability_service.shap_values(X[0], domain_id)
         out["shap"] = {
@@ -303,6 +513,13 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
             "base_value": sh.get("base_value", 0.0),
             "decision": dec,
             "feature_labels": sh.get("feature_labels", {}),
+        }
+        shap_pred = sh.get("prediction")
+        fidelity_match = shap_pred == dec if shap_pred is not None else True
+        explanation_fidelity = {
+            "prediction_match": fidelity_match,
+            "shap_base_value": sh.get("base_value", 0.0),
+            "model_decision": dec,
         }
     except Exception as e:
         logger.warning("SHAP failed for domain %s: %s", domain_id, e)
@@ -313,6 +530,8 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
             "decision": dec,
             "feature_labels": {},
         }
+        explanation_fidelity = {"prediction_match": False, "error": str(e)}
+    out["explanation_fidelity"] = explanation_fidelity
     
     # Domain-aware explanation layer
     row_dict = df_clean.iloc[0].to_dict() if not df_clean.empty else row
@@ -323,18 +542,19 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
         logger.warning("Explanation layer failed: %s", e)
         out["explanation_layer"] = {"bullets": [], "summary": [], "directional_reasoning": ""}
     
-    # Uncertainty (simplified for now)
+    # Domain-aware uncertainty and stability testing
     try:
-        is_stable = conf >= 0.6
-        conf_band = "high" if conf >= 0.85 else ("medium" if conf >= 0.6 else "low")
-        out["uncertainty"] = {
-            "confidence_band": conf_band,
-            "stable": is_stable,
-            "warning": None if is_stable else "This decision has low confidence and may be unstable.",
-            "volatility_note": None,
-        }
+        unc = _domain_uncertainty_stability(row_dict, dec, conf, domain, domain_model_service)
+        out["uncertainty"] = unc
     except Exception as e:
-        out["uncertainty"] = {"confidence_band": "medium", "stable": True, "warning": None, "volatility_note": None}
+        logger.warning("Uncertainty/stability failed for domain %s: %s", domain_id, e)
+        out["uncertainty"] = {
+            "confidence_band": "high" if conf >= 0.85 else ("medium" if conf >= 0.6 else "low"),
+            "stable": conf >= 0.6,
+            "warning": None,
+            "volatility_note": None,
+            "unstable_features": [],
+        }
     
     # Trust calibration
     try:
@@ -350,12 +570,78 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
             "estimated_read_time_seconds": 30,
         }
     
-    # Counterfactual preview (simplified)
-    out["counterfactuals"] = []
-    out["counterfactual_preview"] = []
+    # Domain-aware counterfactual preview
+    try:
+        cf_preview = _domain_counterfactual_preview(row_dict, out["shap"], dec, domain)
+        out["counterfactuals"] = []  # Keep for compatibility
+        out["counterfactual_preview"] = cf_preview
+    except Exception as e:
+        logger.warning("Counterfactual preview failed for domain %s: %s", domain_id, e)
+        out["counterfactuals"] = []
+        out["counterfactual_preview"] = []
     
     _audit("domain_decision", {"domain_id": domain_id, "decision": dec})
     return out
+
+
+@router.post("/decision/{domain_id}/batch")
+def domain_decision_batch(domain_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Batch prediction for multiple rows. Returns only decisions (no full explanations for performance).
+    
+    Use this to preview outcomes for all rows in a dataset.
+    """
+    domain = get_domain(domain_id)
+    if not domain:
+        raise HTTPException(status_code=404, detail=f"Domain '{domain_id}' not found")
+    
+    if not is_model_trained(domain_id):
+        raise HTTPException(status_code=400, detail=f"Model not trained for domain '{domain_id}'.")
+    
+    try:
+        domain_model_service.load_domain(domain_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load domain: {e}")
+    
+    predictions = []
+    
+    for i, row in enumerate(rows):
+        try:
+            df = pd.DataFrame([row])
+            X, df_clean, errs = domain_model_service.validate_and_transform(df)
+            
+            if X.size == 0:
+                predictions.append({
+                    "index": i,
+                    "decision": None,
+                    "confidence": None,
+                    "error": "; ".join(errs) or "Invalid input"
+                })
+                continue
+            
+            dec, conf, probs = domain_model_service.predict_single(X[0])
+            
+            predictions.append({
+                "index": i,
+                "decision": dec,
+                "confidence": conf,
+                "positive_label": domain.positive_label,
+                "negative_label": domain.negative_label,
+            })
+        except Exception as e:
+            predictions.append({
+                "index": i,
+                "decision": None,
+                "confidence": None,
+                "error": str(e)
+            })
+    
+    return {
+        "domain_id": domain_id,
+        "predictions": predictions,
+        "count": len(predictions),
+        "positive_label": domain.positive_label,
+        "negative_label": domain.negative_label,
+    }
 
 
 def _decode_shap_feature_name(encoded_name: str) -> str:
@@ -501,6 +787,253 @@ def _domain_plain_language_explanations(
     }
 
 
+def _domain_uncertainty_stability(
+    row_dict: dict[str, Any],
+    decision: str,
+    confidence: float,
+    domain,
+    domain_model_service,
+    delta_pct: float = 0.05,
+) -> dict[str, Any]:
+    """Domain-aware uncertainty and stability testing.
+    
+    Perturbs numeric features slightly and checks if the decision flips.
+    Uses domain-specific feature columns and labels.
+    """
+    import numpy as np
+    
+    # Basic confidence band
+    conf_band = "high" if confidence >= 0.85 else ("medium" if confidence >= 0.6 else "low")
+    is_low_conf = confidence < 0.6
+    is_positive = decision == domain.positive_label
+    
+    # Stability testing: perturb numeric features
+    stable = True
+    unstable_features = []
+    
+    try:
+        df_base = pd.DataFrame([row_dict])
+        
+        # Replace missing values marker
+        df_base = df_base.replace("?", np.nan)
+        
+        # Convert numeric columns
+        for col in domain.numeric_cols:
+            if col in df_base.columns:
+                df_base[col] = pd.to_numeric(df_base[col], errors="coerce")
+        
+        # Test perturbations on numeric features
+        for col in domain.numeric_cols[:10]:  # Limit to first 10 numeric cols for performance
+            if col not in df_base.columns:
+                continue
+            val = df_base[col].iloc[0]
+            if pd.isna(val):
+                continue
+            try:
+                v = float(val)
+            except (TypeError, ValueError):
+                continue
+            
+            # Try small perturbations in both directions
+            for sign in (-1, 1):
+                df_perturbed = df_base.copy()
+                delta = max(1, abs(v) * delta_pct) * sign
+                df_perturbed[col] = v + delta
+                
+                try:
+                    X_perturbed, _, _ = domain_model_service.validate_and_transform(df_perturbed)
+                    if X_perturbed.size == 0:
+                        continue
+                    p_dec, _, _ = domain_model_service.predict_single(X_perturbed[0])
+                    if p_dec != decision:
+                        stable = False
+                        feature_label = domain.feature_labels.get(col, col.replace("_", " ").title())
+                        if feature_label not in unstable_features:
+                            unstable_features.append(feature_label)
+                        break
+                except Exception:
+                    continue
+    except Exception as e:
+        logger.warning("Stability testing failed: %s", e)
+    
+    # Generate contextual warnings
+    warning = None
+    volatility_note = None
+    
+    if is_low_conf and not stable:
+        if is_positive:
+            warning = f"This {domain.positive_label.lower()} prediction has low confidence ({confidence*100:.0f}%) and is sensitive to small changes. The decision could easily flip."
+        else:
+            warning = f"This {domain.negative_label.lower()} prediction has low confidence ({confidence*100:.0f}%) and is borderline. Small changes could lead to a different outcome."
+    elif is_low_conf:
+        if is_positive:
+            warning = f"This {domain.positive_label.lower()} prediction has low confidence ({confidence*100:.0f}%). Consider it a tentative assessment."
+        else:
+            warning = f"This {domain.negative_label.lower()} prediction has low confidence ({confidence*100:.0f}%). The case is borderline."
+    elif not stable:
+        if unstable_features:
+            features_str = ", ".join(unstable_features[:2])
+            if is_positive:
+                warning = f"This {domain.positive_label.lower()} prediction is sensitive to changes in {features_str}. Small negative changes could flip the decision."
+            else:
+                warning = f"This {domain.negative_label.lower()} prediction is sensitive to changes in {features_str}. Small improvements could lead to a different outcome."
+        else:
+            warning = "This decision is unstable under small input changes."
+    
+    if not stable:
+        if is_positive:
+            volatility_note = f"The decision engine indicates this {domain.positive_label.lower()} prediction is near the decision boundary. Monitor for changes in key factors."
+        else:
+            volatility_note = f"The decision engine indicates this case is near the decision boundary. Use the What-If tool to explore potential improvements."
+    
+    return {
+        "confidence_band": conf_band,
+        "stable": stable,
+        "warning": warning,
+        "volatility_note": volatility_note,
+        "unstable_features": unstable_features,
+    }
+
+
+def _domain_counterfactual_preview(
+    row_dict: dict[str, Any],
+    shap_data: dict[str, Any],
+    decision: str,
+    domain,
+) -> list[dict[str, Any]]:
+    """Domain-aware counterfactual suggestions based on SHAP values.
+    
+    For negative outcomes: suggests improvements to key factors.
+    For positive outcomes: shows what could threaten the outcome.
+    """
+    out: list[dict[str, Any]] = []
+    
+    feature_names = shap_data.get("decision_factor_names", [])
+    values = shap_data.get("values", [])
+    feature_labels = domain.feature_labels if domain else {}
+    
+    if not feature_names or not values:
+        return out
+    
+    is_positive = decision == domain.positive_label
+    seen_features = set()
+    
+    # Pair features with their SHAP values
+    feature_shap_pairs = list(zip(feature_names, values))
+    
+    if not is_positive:
+        # For negative outcomes: find factors that hurt (negative SHAP) and suggest improvements
+        # Sort by most negative SHAP values first
+        negative_factors = [(f, v) for f, v in feature_shap_pairs if v < 0]
+        negative_factors.sort(key=lambda x: x[1])
+        
+        for encoded_name, shap_val in negative_factors[:5]:
+            orig_feature = _decode_shap_feature_name(encoded_name)
+            
+            if orig_feature in seen_features:
+                continue
+            seen_features.add(orig_feature)
+            
+            label = feature_labels.get(orig_feature, orig_feature.replace("_", " ").title())
+            raw_value = row_dict.get(orig_feature, "")
+            
+            # Check if it's a numeric feature we can suggest improvement for
+            if orig_feature in domain.numeric_cols:
+                if raw_value not in (None, "", "nan"):
+                    try:
+                        current_val = float(raw_value)
+                        # Suggest improvement direction
+                        out.append({
+                            "suggestion": f"Improving your {label} (currently {current_val:.1f}) could positively impact the outcome.",
+                            "decision_factor": orig_feature,
+                            "label": label,
+                            "current_value": current_val,
+                            "change_direction": "improve",
+                            "impact": abs(shap_val),
+                        })
+                    except (TypeError, ValueError):
+                        out.append({
+                            "suggestion": f"Changes to your {label} could affect the outcome.",
+                            "decision_factor": orig_feature,
+                            "label": label,
+                            "change_direction": "unknown",
+                            "impact": abs(shap_val),
+                        })
+                else:
+                    out.append({
+                        "suggestion": f"Improving your {label} could positively impact the outcome.",
+                        "decision_factor": orig_feature,
+                        "label": label,
+                        "change_direction": "improve",
+                        "impact": abs(shap_val),
+                    })
+            else:
+                # Categorical feature
+                out.append({
+                    "suggestion": f"A different {label} status could affect the outcome.",
+                    "decision_factor": orig_feature,
+                    "label": label,
+                    "change_direction": "change",
+                    "impact": abs(shap_val),
+                })
+            
+            if len(out) >= 3:
+                break
+    else:
+        # For positive outcomes: show what factors are supporting it (could threaten if changed)
+        positive_factors = [(f, v) for f, v in feature_shap_pairs if v > 0]
+        positive_factors.sort(key=lambda x: -x[1])  # Most positive first
+        
+        for encoded_name, shap_val in positive_factors[:3]:
+            orig_feature = _decode_shap_feature_name(encoded_name)
+            
+            if orig_feature in seen_features:
+                continue
+            seen_features.add(orig_feature)
+            
+            label = feature_labels.get(orig_feature, orig_feature.replace("_", " ").title())
+            raw_value = row_dict.get(orig_feature, "")
+            
+            if raw_value not in (None, "", "nan"):
+                out.append({
+                    "suggestion": f"Your {label} ({raw_value}) is favorable — significant changes here could affect the outcome.",
+                    "decision_factor": orig_feature,
+                    "label": label,
+                    "current_value": raw_value,
+                    "change_direction": "maintain",
+                    "impact": shap_val,
+                })
+            else:
+                out.append({
+                    "suggestion": f"Your {label} is favorable — changes here could affect the outcome.",
+                    "decision_factor": orig_feature,
+                    "label": label,
+                    "change_direction": "maintain",
+                    "impact": shap_val,
+                })
+    
+    # If no suggestions generated, provide general guidance
+    if not out:
+        if not is_positive:
+            out.append({
+                "suggestion": f"Consider improving key factors to increase chances of a {domain.positive_label.lower()} outcome.",
+                "decision_factor": "general",
+                "label": "General",
+                "change_direction": "improve",
+                "impact": 0,
+            })
+        else:
+            out.append({
+                "suggestion": f"Current profile supports the {domain.positive_label.lower()} prediction. Maintain key factors.",
+                "decision_factor": "general",
+                "label": "General",
+                "change_direction": "maintain",
+                "impact": 0,
+            })
+    
+    return out[:5]
+
+
 @router.post("/decision")
 def decision(row: dict[str, Any]) -> dict[str, Any]:
     """PRISM decision engine: decision, confidence, SHAP, counterfactuals for one row (A1–A15)."""
@@ -520,6 +1053,7 @@ def decision(row: dict[str, Any]) -> dict[str, Any]:
             decision=dec, confidence=conf, probabilities=probs
         ).model_dump(),
     }
+    explanation_fidelity: dict[str, Any] = {}
     try:
         sh = explainability_service.shap_values(X[0])
         out["shap"] = ShapValuesResponse(
@@ -528,6 +1062,19 @@ def decision(row: dict[str, Any]) -> dict[str, Any]:
             base_value=sh.get("base_value") or 0.0,
             decision=sh.get("prediction") or dec,
         ).model_dump()
+        # Explanation fidelity: does SHAP prediction match model prediction? Stability = consistent under small input change
+        shap_pred = sh.get("prediction")
+        shap_base = sh.get("base_value", 0.0)
+        shap_vals = sh.get("values") or []
+        shap_sum = sum(shap_vals) if shap_vals else 0.0
+        # For binary: base + sum(SHAP) ≈ logit or prob; prediction match is primary
+        fidelity_match = shap_pred == dec if shap_pred else True
+        explanation_fidelity = {
+            "prediction_match": fidelity_match,
+            "shap_base_value": shap_base,
+            "shap_sum": shap_sum,
+            "model_decision": dec,
+        }
     except Exception as e:
         logger.warning("SHAP failed: %s", e)
         out["shap"] = ShapValuesResponse(
@@ -536,6 +1083,7 @@ def decision(row: dict[str, Any]) -> dict[str, Any]:
             base_value=0.0,
             decision=dec,
         ).model_dump()
+        explanation_fidelity = {"prediction_match": False, "error": str(e)}
     try:
         cfs_raw = explainability_service.counterfactuals(df, total_cfs=2)
         out["counterfactuals"] = [
@@ -593,6 +1141,8 @@ def decision(row: dict[str, Any]) -> dict[str, Any]:
             estimated_read_time_seconds=30,
         ).model_dump()
 
+    out["explanation_fidelity"] = explanation_fidelity
+
     _audit("decision", {"decision": dec})
     return out
 
@@ -611,6 +1161,16 @@ def _dict_to_csv(row: dict[str, Any]) -> str:
     w.writeheader()
     w.writerow({c: row.get(c, "") for c in cols})
     return buf.getvalue()
+
+
+class BulkExportRequest(BaseModel):
+    """Bulk export: dataset rows + predictions (+ optional explanation bullets)."""
+
+    format: str = Field("csv", pattern="^(csv)$")
+    columns: list[str] = Field(default_factory=list)
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    predictions: dict[str, Any] = Field(default_factory=dict)  # index -> { decision, confidence, positive_label?, negative_label? }
+    include_explanations: bool = False  # If True, predictions may include bullets per row (from client)
 
 
 @router.post("/export")
@@ -633,6 +1193,35 @@ def export(req: ExportRequest) -> StreamingResponse:
             headers={"Content-Disposition": "attachment; filename=prism_export.pdf"},
         )
     raise HTTPException(status_code=400, detail="format must be csv or pdf")
+
+
+@router.post("/export/bulk")
+def export_bulk(req: BulkExportRequest) -> StreamingResponse:
+    """Export dataset rows with batch predictions as CSV (full audit trail)."""
+    import csv as csv_module
+    buf = io.StringIO()
+    cols = list(req.columns) if req.columns else []
+    # Add decision columns
+    out_cols = ["row_index", "decision", "confidence"] + cols
+    w = csv_module.DictWriter(buf, fieldnames=out_cols, extrasaction="ignore")
+    w.writeheader()
+    for i, row in enumerate(req.rows):
+        pred = req.predictions.get(str(i)) or req.predictions.get(i)
+        dec = (pred.get("decision") or "") if pred else ""
+        conf = pred.get("confidence")
+        conf_str = f"{conf * 100:.1f}%" if isinstance(conf, (int, float)) else str(conf or "")
+        out_row = {"row_index": i + 1, "decision": dec, "confidence": conf_str}
+        for c in cols:
+            if c in row:
+                out_row[c] = row[c]
+        w.writerow(out_row)
+    out_buf = io.BytesIO(buf.getvalue().encode("utf-8"))
+    out_buf.seek(0)
+    return StreamingResponse(
+        iter([out_buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=prism_bulk_export.csv"},
+    )
 
 
 def _export_csv(data: dict[str, Any]) -> io.BytesIO:
@@ -924,15 +1513,28 @@ def feedback(fb: FeedbackCreate) -> dict[str, str]:
 
 
 # ============== STUDY MANAGEMENT ROUTES ==============
+# SLR demo only: study/participant/questionnaire collection disabled (no human subjects).
+# These endpoints return 410 Gone so no participant data is ever stored.
+STUDY_DISABLED = True
+
+def _study_disabled() -> None:
+    if STUDY_DISABLED:
+        raise HTTPException(
+            status_code=410,
+            detail="Study and participant data collection is disabled. This deployment is for SLR demo only (no user study, no questionnaires).",
+        )
+
 
 @router.post("/study/session")
 def create_study_session(req: StudySessionCreate) -> StudySessionResponse:
     """Create a new study session for a participant."""
+    _study_disabled()
     pre_q = req.pre_questionnaire.model_dump() if req.pre_questionnaire else None
     session = study_service.create_session(
         participant_id=req.participant_id,
         condition=req.condition,
         pre_questionnaire=pre_q,
+        within_subjects=req.within_subjects,
     )
     _audit("study_session_start", {"session_id": session["session_id"], "condition": req.condition})
     return StudySessionResponse(**session)
@@ -941,6 +1543,7 @@ def create_study_session(req: StudySessionCreate) -> StudySessionResponse:
 @router.get("/study/session/{session_id}")
 def get_study_session(session_id: str) -> StudySessionResponse:
     """Get study session details."""
+    _study_disabled()
     session = study_service.get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -950,6 +1553,7 @@ def get_study_session(session_id: str) -> StudySessionResponse:
 @router.post("/study/session/{session_id}/end")
 def end_study_session(session_id: str) -> StudySessionResponse:
     """End a study session."""
+    _study_disabled()
     session = study_service.end_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -960,6 +1564,7 @@ def end_study_session(session_id: str) -> StudySessionResponse:
 @router.post("/study/interaction")
 def log_study_interaction(req: InteractionLog) -> dict[str, str]:
     """Log a user interaction for study analysis."""
+    _study_disabled()
     success = study_service.log_interaction(
         session_id=req.session_id,
         action=req.action,
@@ -974,6 +1579,7 @@ def log_study_interaction(req: InteractionLog) -> dict[str, str]:
 @router.get("/study/session/{session_id}/metrics")
 def get_study_metrics(session_id: str) -> StudyMetrics:
     """Get computed metrics for a study session."""
+    _study_disabled()
     metrics = study_service.get_session_metrics(session_id)
     if not metrics:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -983,6 +1589,7 @@ def get_study_metrics(session_id: str) -> StudyMetrics:
 @router.get("/study/sessions")
 def list_study_sessions() -> list[StudySessionResponse]:
     """List all study sessions."""
+    _study_disabled()
     sessions = study_service.get_all_sessions()
     return [StudySessionResponse(**s) for s in sessions]
 
@@ -990,6 +1597,7 @@ def list_study_sessions() -> list[StudySessionResponse]:
 @router.get("/study/export")
 def export_study_data() -> dict[str, Any]:
     """Export all study data for analysis (sessions + interactions + summary)."""
+    _study_disabled()
     data = study_service.export_study_data()
     _audit("study_export", {"sessions_count": len(data["sessions"])})
     return data
@@ -998,6 +1606,7 @@ def export_study_data() -> dict[str, Any]:
 @router.get("/study/export/csv")
 def export_study_csv() -> StreamingResponse:
     """Export study data as CSV for statistical analysis."""
+    _study_disabled()
     csv_data = study_service.export_for_r()
     out = io.BytesIO(csv_data.encode("utf-8"))
     out.seek(0)
@@ -1011,6 +1620,7 @@ def export_study_csv() -> StreamingResponse:
 @router.get("/study/export/interactions")
 def export_interactions_csv() -> StreamingResponse:
     """Export interactions in long format for R/Python analysis."""
+    _study_disabled()
     csv_data = study_service.export_interactions_long()
     out = io.BytesIO(csv_data.encode("utf-8"))
     out.seek(0)
@@ -1024,6 +1634,7 @@ def export_interactions_csv() -> StreamingResponse:
 @router.get("/study/export/questionnaires")
 def export_questionnaires() -> dict[str, str]:
     """Export pre/post questionnaires as CSV strings."""
+    _study_disabled()
     return study_service.export_questionnaires()
 
 
@@ -1032,6 +1643,7 @@ def export_questionnaires() -> dict[str, str]:
 @router.get("/study/session/{session_id}/task")
 def get_current_task(session_id: str) -> dict[str, Any]:
     """Get the current task for a study session."""
+    _study_disabled()
     task = study_service.get_current_task(session_id)
     if task is None:
         # Check if session exists
@@ -1046,6 +1658,7 @@ def get_current_task(session_id: str) -> dict[str, Any]:
 @router.post("/study/session/{session_id}/task")
 def submit_task_response(session_id: str, req: TaskResponse) -> dict[str, Any]:
     """Submit a response to a task."""
+    _study_disabled()
     if req.session_id != session_id:
         raise HTTPException(status_code=400, detail="Session ID mismatch")
     
@@ -1066,6 +1679,7 @@ def submit_task_response(session_id: str, req: TaskResponse) -> dict[str, Any]:
 @router.post("/study/session/{session_id}/post-questionnaire")
 def submit_post_questionnaire(session_id: str, req: PostStudyQuestionnaire) -> dict[str, str]:
     """Submit post-study questionnaire (NASA-TLX, Trust, SUS)."""
+    _study_disabled()
     result = study_service.submit_post_questionnaire(
         session_id=session_id,
         questionnaire=req.model_dump(),

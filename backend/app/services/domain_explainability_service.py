@@ -38,6 +38,14 @@ class DomainExplainabilityService:
             "uci_credit_approval": "uci_credit_approval.csv",
             "german_credit": "german_credit.csv",
             "taiwan_credit_card": "taiwan_credit_card.csv",
+            "heart_disease": "heart_disease.csv",
+            "diabetes": "diabetes.csv",
+            "breast_cancer": "breast_cancer.csv",
+            "bank_marketing": "bank_marketing.csv",
+            "student_performance": "student_performance.csv",
+            "hr_attrition": "hr_attrition.csv",
+            "insurance_coil": "insurance_coil.csv",
+            "recidivism_compas": "recidivism_compas.csv",
         }
         
         filename = filename_map.get(domain_id)
@@ -138,6 +146,65 @@ class DomainExplainabilityService:
         except Exception as e:
             print(f"SHAP computation error: {e}")
             return default
+
+    def global_feature_importance(self, domain_id: str, sample_size: int = 50) -> dict[str, Any]:
+        """Compute mean absolute SHAP across a sample of rows for dataset-level explainability."""
+        domain_model_service.ensure_loaded(domain_id)
+        domain = domain_model_service.current_domain
+        if domain is None:
+            return {"feature_names": [], "mean_abs_shap": [], "feature_labels": {}, "sample_size": 0}
+
+        datasets_dir = settings.base_dir / "datasets"
+        filename_map = {
+            "uci_credit_approval": "uci_credit_approval.csv",
+            "german_credit": "german_credit.csv",
+            "taiwan_credit_card": "taiwan_credit_card.csv",
+            "heart_disease": "heart_disease.csv",
+            "diabetes": "diabetes.csv",
+            "breast_cancer": "breast_cancer.csv",
+            "bank_marketing": "bank_marketing.csv",
+            "student_performance": "student_performance.csv",
+            "hr_attrition": "hr_attrition.csv",
+            "insurance_coil": "insurance_coil.csv",
+            "recidivism_compas": "recidivism_compas.csv",
+        }
+        filename = filename_map.get(domain_id)
+        if not filename or not (datasets_dir / filename).exists():
+            return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
+
+        try:
+            df = pd.read_csv(datasets_dir / filename)
+            feature_cols = [c for c in domain.feature_cols if c in df.columns]
+            df = df[feature_cols].replace("?", np.nan)
+            for c in domain.numeric_cols:
+                if c in df.columns:
+                    df[c] = pd.to_numeric(df[c], errors="coerce")
+            X = domain_model_service._preproc.transform(df.head(sample_size))
+            feature_names = domain_model_service.feature_names
+            explainer = self._get_or_build_explainer(domain_id)
+            if explainer is None:
+                return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
+
+            vals_list = []
+            for i in range(min(sample_size, len(X))):
+                v = explainer.shap_values(X[i : i + 1])
+                if isinstance(v, list):
+                    v = v[1]
+                v = np.asarray(v)
+                if v.ndim == 2:
+                    v = v[0]
+                vals_list.append(np.abs(v))
+            mean_abs = np.mean(vals_list, axis=0)
+            idx = np.argsort(mean_abs)[::-1][:20]
+            return {
+                "feature_names": [feature_names[j] for j in idx],
+                "mean_abs_shap": [float(mean_abs[j]) for j in idx],
+                "feature_labels": domain.feature_labels or {},
+                "sample_size": len(vals_list),
+            }
+        except Exception as e:
+            print(f"Global SHAP failed for {domain_id}: {e}")
+            return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
 
     def clear_cache(self, domain_id: str | None = None) -> None:
         """Clear cached explainers."""
