@@ -2,7 +2,7 @@
 backend/venv/
 backend/__pycache__/
 backend/**/__pycache__/
-backend/artifacts/
+# backend/artifacts/ — do NOT ignore; required for Render (trained models must be in repo)
 backend/logs/
 backend/.env
 

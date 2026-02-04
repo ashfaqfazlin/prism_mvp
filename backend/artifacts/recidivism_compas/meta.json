@@ -1,0 +1,57 @@
+{
+  "domain_id": "recidivism_compas",
+  "domain_name": "Recidivism Prediction",
+  "feature_cols": [
+    "age",
+    "sex",
+    "race",
+    "juv_fel_count",
+    "juv_misd_count",
+    "juv_other_count",
+    "priors_count",
+    "c_charge_degree"
+  ],
+  "target_col": "target",
+  "categorical": [
+    "sex",
+    "race",
+    "c_charge_degree"
+  ],
+  "numeric": [
+    "age",
+    "juv_fel_count",
+    "juv_misd_count",
+    "juv_other_count",
+    "priors_count"
+  ],
+  "encoded_feature_names": [
+    "cat__sex_Female",
+    "cat__sex_Male",
+    "cat__race_African-American",
+    "cat__race_Asian",
+    "cat__race_Caucasian",
+    "cat__race_Hispanic",
+    "cat__race_Native American",
+    "cat__race_Other",
+    "cat__c_charge_degree_F",
+    "cat__c_charge_degree_M",
+    "num__age",
+    "num__juv_fel_count",
+    "num__juv_misd_count",
+    "num__juv_other_count",
+    "num__priors_count"
+  ],
+  "positive_label": "Will Reoffend",
+  "negative_label": "Won't Reoffend",
+  "feature_labels": {
+    "age": "Age",
+    "sex": "Sex",
+    "race": "Race",
+    "juv_fel_count": "Juvenile Felony Count",
+    "juv_misd_count": "Juvenile Misdemeanor Count",
+    "juv_other_count": "Juvenile Other Count",
+    "priors_count": "Prior Offenses Count",
+    "c_charge_degree": "Charge Degree"
+  },
+  "test_accuracy": 0.6853776853776854
+}

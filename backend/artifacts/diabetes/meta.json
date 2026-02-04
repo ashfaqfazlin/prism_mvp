@@ -1,0 +1,49 @@
+{
+  "domain_id": "diabetes",
+  "domain_name": "Diabetes Prediction",
+  "feature_cols": [
+    "pregnancies",
+    "glucose",
+    "blood_pressure",
+    "skin_thickness",
+    "insulin",
+    "bmi",
+    "diabetes_pedigree",
+    "age"
+  ],
+  "target_col": "outcome",
+  "categorical": [],
+  "numeric": [
+    "pregnancies",
+    "glucose",
+    "blood_pressure",
+    "skin_thickness",
+    "insulin",
+    "bmi",
+    "diabetes_pedigree",
+    "age"
+  ],
+  "encoded_feature_names": [
+    "num__pregnancies",
+    "num__glucose",
+    "num__blood_pressure",
+    "num__skin_thickness",
+    "num__insulin",
+    "num__bmi",
+    "num__diabetes_pedigree",
+    "num__age"
+  ],
+  "positive_label": "Diabetes Positive",
+  "negative_label": "Diabetes Negative",
+  "feature_labels": {
+    "pregnancies": "Number of Pregnancies",
+    "glucose": "Glucose Level",
+    "blood_pressure": "Blood Pressure (mm Hg)",
+    "skin_thickness": "Skin Thickness (mm)",
+    "insulin": "Insulin Level (mu U/ml)",
+    "bmi": "BMI",
+    "diabetes_pedigree": "Diabetes Pedigree Function",
+    "age": "Age"
+  },
+  "test_accuracy": 0.7467532467532467
+}
