@@ -56,8 +56,10 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('prism_bookmarks') || '[]') } catch { return [] }
   })
   const [showSavedCases, setShowSavedCases] = useState(false)
+  const [pendingBookmark, setPendingBookmark] = useState(null) // Apply after dataset loads
   const [tourStep, setTourStep] = useState(null) // null | 0 | 1 | 2 | 3 | 4 (0=start, 4=done)
   const [theme, setTheme] = useState(() => localStorage.getItem('prism_theme') || 'dark') // 'dark' | 'light'
+  const explanationSectionRef = useRef(null)
   
   // ============== DATASET PICKER STATE ==============
   const [datasetCatalog, setDatasetCatalog] = useState([])
@@ -514,13 +516,30 @@ export default function App() {
     setBookmarks((prev) => prev.filter((b) => b.id !== id))
   }
 
-  const loadBookmark = (entry) => {
+  const loadBookmark = async (entry) => {
     setShowSavedCases(false)
-    if (entry.rowIndex != null && rows[entry.rowIndex]) {
+    const sameDataset = activeDataset?.id === entry.datasetId
+    const rowInRange = entry.rowIndex != null && rows[entry.rowIndex]
+
+    if (sameDataset && rowInRange) {
       setSelectedIndex(entry.rowIndex)
       setResult(entry.result)
       setWhatIfRow(null)
       setBaselineResult(entry.result)
+      explanationSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+
+    setPendingBookmark(entry)
+    try {
+      if (entry.datasetId?.startsWith?.('upload_')) {
+        await selectRecentUpload(entry.datasetId)
+      } else {
+        await selectCatalogDataset(entry.datasetId)
+      }
+    } catch (e) {
+      setError(e.message)
+      setPendingBookmark(null)
     }
   }
 
@@ -582,6 +601,20 @@ export default function App() {
     try { localStorage.setItem('prism_bookmarks', JSON.stringify(bookmarks)) } catch (_) {}
   }, [bookmarks])
 
+  // Apply pending bookmark after dataset loads
+  useEffect(() => {
+    if (!pendingBookmark || activeDataset?.id !== pendingBookmark.datasetId || rows.length === 0) return
+    const idx = Math.min(pendingBookmark.rowIndex ?? 0, rows.length - 1)
+    setSelectedIndex(idx)
+    setResult(pendingBookmark.result)
+    setWhatIfRow(null)
+    setBaselineResult(pendingBookmark.result)
+    setPendingBookmark(null)
+    requestAnimationFrame(() => {
+      explanationSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [pendingBookmark, activeDataset?.id, rows.length])
+
   // Keyboard navigation: ArrowUp/Down change selection, Enter runs decision
   const selectedIndexRef = useRef(selectedIndex)
   const rowsRef = useRef(rows)
@@ -642,12 +675,16 @@ export default function App() {
             </button>
             <button
               type="button"
-              className="icon-btn"
+              role="switch"
+              aria-checked={theme === 'light'}
+              className="theme-toggle"
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
               aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
               title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
             >
-              {theme === 'dark' ? '☀️' : '🌙'}
+              <span className="theme-toggle-track">
+                <span className="theme-toggle-thumb" />
+              </span>
             </button>
             {!localStorage.getItem('prism_tour_done') && (
               <button type="button" className="icon-btn" onClick={() => setTourStep(0)} aria-label="Start tour">
@@ -1255,7 +1292,7 @@ export default function App() {
       </section>
 
       {(selectedIndex != null || result) && (
-      <section className="section" onMouseEnter={() => trackSectionEnter('explanation')}>
+      <section ref={explanationSectionRef} className="section" onMouseEnter={() => trackSectionEnter('explanation')}>
         <h2>Explanation</h2>
         
         {/* Mode toggle - interactive only */}
