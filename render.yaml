@@ -1,6 +1,6 @@
 # PRISM — Render Blueprint
 # Deploy: Connect this repo in Render Dashboard and use "Blueprint" to create both services.
-# After first deploy, set env vars (see DEPLOY.md) and redeploy frontend.
+# If your Render URLs differ (e.g. prism-abc123.onrender.com), update these env vars in the dashboard and redeploy the frontend.
 
 services:
   # Backend API (FastAPI)
@@ -14,8 +14,8 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: PRISM_CORS_ORIGINS
-        sync: false
-        # After deploy: set to your frontend URL, e.g. https://prism.onrender.com
+        value: https://prism.onrender.com
+        # If your frontend URL is different, change in Dashboard → prism-api → Environment, then redeploy.
 
   # Frontend (Vite/React static)
   - type: web
@@ -24,7 +24,11 @@ services:
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        sync: false
-        # After deploy: set to your backend URL, e.g. https://prism-api.onrender.com
+        value: https://prism-api.onrender.com
+        # If your backend URL is different, change in Dashboard → prism → Environment, then redeploy (required so build picks it up).

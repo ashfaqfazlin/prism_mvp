@@ -39,6 +39,23 @@
 1. Open the frontend URL in a browser.
 2. Select a dataset and run a decision. If the app loads and decisions work, deployment is correct.
 
+## Still not working?
+
+1. **Use the frontend URL, not the backend**  
+   Open the **prism** (static site) URL in your browser, e.g. `https://prism.onrender.com`. Do **not** open the prism-api URL in the browser; that returns JSON and will show `{"detail": "Not Found"}` at `/`.
+
+2. **URLs don't match the defaults**  
+   If your services have different URLs (e.g. `https://prism-abc12.onrender.com`):
+   - In **prism-api** → Environment: set **PRISM_CORS_ORIGINS** to your **frontend** URL (exactly as in the address bar).
+   - In **prism** → Environment: set **VITE_API_BASE_URL** to your **backend** URL (no trailing slash).
+   - **Important:** After changing **VITE_API_BASE_URL**, go to **prism** → **Manual Deploy** and deploy again. The frontend only picks up this value at **build time**.
+
+3. **Check the backend**  
+   In a new tab open `https://<your-prism-api-url>/api/health`. You should see `{"status":"ok","app":"PRISM"}`. If you get an error or it takes a long time, the backend may be starting up (free tier cold start ~30–60 s).
+
+4. **Browser console**  
+   Open DevTools (F12) → Console. If you see CORS errors, the frontend URL is not in **PRISM_CORS_ORIGINS**. If you see 404 on `/api/...`, the frontend was built without the correct **VITE_API_BASE_URL** — set it and redeploy the frontend (step 2).
+
 ## Notes
 
 - **Free tier**: Backend may spin down after ~15 minutes of no traffic; the first request can take 30–60 seconds (cold start).
