@@ -150,7 +150,7 @@ class DatasetService:
                 if pos_count is not None and neg_count is not None:
                     summary["positive_count"] = int(pos_count)
                     summary["negative_count"] = int(neg_count)
-        
+
         return {
             "dataset_id": dataset_id,
             "info": enhanced_info,
