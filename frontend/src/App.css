@@ -250,7 +250,7 @@ body {
 .decision-card, .shap-card, .cf-card, .uncertainty-card,
 .explanation-layer-card, .counterfactual-preview-card,
 .whatif-card, .trust-calibration-card, .static-explanation-card,
-.onboarding-card, .questionnaire-card, .task-card, .decision-preview {
+.onboarding-card, .task-card, .decision-preview {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -1531,8 +1531,7 @@ button {
 }
 
 /* ============== ONBOARDING ============== */
-.app.onboarding,
-.app.questionnaire {
+.app.onboarding {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1540,51 +1539,10 @@ button {
   padding-top: var(--space-xl);
 }
 
-.onboarding-card,
-.questionnaire-card {
+.onboarding-card {
   max-width: 550px;
   margin: 0 auto;
   width: 100%;
-}
-
-.study-intro {
-  font-size: 1rem;
-  line-height: 1.7;
-  color: var(--color-text-secondary);
-  margin-bottom: var(--space-xl);
-}
-
-.condition-selector {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-sm);
-  margin-top: var(--space-sm);
-}
-
-.condition-selector button {
-  padding: var(--space-md);
-  background: var(--color-surface-elevated);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-md);
-  color: var(--color-text);
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.condition-selector button:hover {
-  border-color: var(--color-border-hover);
-}
-
-.condition-selector button.active {
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-}
-
-.condition-desc {
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-  margin-top: var(--space-sm);
-  text-align: center;
 }
 
 .onboarding-actions {
@@ -1592,85 +1550,6 @@ button {
   flex-direction: column;
   gap: var(--space-sm);
   margin-top: var(--space-xl);
-}
-
-.start-study-btn,
-.submit-task-btn {
-  width: 100%;
-  padding: var(--space-md) var(--space-lg);
-  background: var(--color-primary);
-  color: white;
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.onboarding-actions .start-study-btn {
-  margin-top: 0;
-}
-
-.skip-btn {
-  width: 100%;
-  padding: var(--space-md) var(--space-lg);
-  background: transparent;
-  color: var(--color-text-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.skip-btn:hover {
-  border-color: var(--color-border-hover);
-  color: var(--color-text);
-}
-
-.start-study-btn:hover,
-.submit-task-btn:hover {
-  background: var(--color-primary-hover);
-}
-
-.submit-task-btn {
-  margin-top: var(--space-xl);
-}
-
-.start-study-btn:disabled,
-.submit-task-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ethics-note {
-  margin-top: var(--space-xl);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--color-border);
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  text-align: center;
-  line-height: 1.6;
-}
-
-/* ============== QUESTIONNAIRE ============== */
-.questionnaire-card h2 {
-  margin-top: var(--space-xl);
-  padding-top: var(--space-lg);
-  border-top: 1px solid var(--color-border);
-}
-
-.questionnaire-card h2:first-of-type {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
-
-.q-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-md);
 }
 
 /* ============== PROGRESS INDICATOR ============== */

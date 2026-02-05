@@ -17,9 +17,15 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="PRISM — Human-centred Explainable AI (XAI) for credit-approval decision support. Decision engine, confidence, decision factors.",
+    description="PRISM — Human-centred Explainable AI (XAI). Decision engine, confidence, decision factors.",
     version="0.1.0",
     lifespan=lifespan,
+    swagger_ui_parameters={
+        "docExpansion": "list",
+        "defaultModelsExpandDepth": -1,
+        "filter": True,
+        "displayRequestDuration": False,
+    },
 )
 _origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(

@@ -59,5 +59,5 @@
 ## Notes
 
 - **Free tier**: Backend may spin down after ~15 minutes of no traffic; the first request can take 30–60 seconds (cold start).
-- **Datasets**: Pre-loaded datasets in `backend/datasets/` are included in the repo and available after deploy. Uploaded files and `study_data/` are **not** persistent on free tier (they’re lost on redeploy or restart).
+- **Datasets**: Pre-loaded datasets in `backend/datasets/` are included in the repo and available after deploy. Uploaded files and `app_data/` are **not** persistent on free tier (they’re lost on redeploy or restart).
 - **Artifacts**: Trained models in `backend/artifacts/` must be in the repo for decisions and explanations to work on Render. The repo is set up so `backend/artifacts/` is **not** gitignored. If you see "model not trained" for every dataset, add and push artifacts: `git add backend/artifacts/ && git commit -m "Add trained models for Render" && git push`.

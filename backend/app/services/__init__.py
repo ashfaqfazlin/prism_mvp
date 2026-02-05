@@ -7,7 +7,6 @@ from .explanation_layer import (
     counterfactual_preview,
     get_feature_ranges,
 )
-from .study_service import study_service
 
 __all__ = [
     "data_service",
@@ -17,5 +16,4 @@ __all__ = [
     "uncertainty_stability",
     "counterfactual_preview",
     "get_feature_ranges",
-    "study_service",
 ]

@@ -5,7 +5,6 @@ import {
   requestDecision,
   exportReport,
   exportBulk,
-  submitFeedback,
   getDatasetCatalog,
   loadDataset,
   getGlobalExplainability,
@@ -17,8 +16,6 @@ import {
   getTargetInfo,
   configureUpload,
   trainUpload,
-  getTrainingStatus,
-  listTrainedUploads,
 } from './api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import './App.css'
@@ -26,9 +23,6 @@ import './App.css'
 const DEFAULT_FEATURE_COLS = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15']
 // Max number of What-If sliders to show (for usability)
 const MAX_WHATIF_SLIDERS = 8
-
-// Demo mode only (SLR methodology: no user study, no participants, no questionnaires)
-const DEMO_MODE = true // Always full interactive; no study conditions
 
 export default function App() {
   // ============== DATA STATE ==============
@@ -83,17 +77,8 @@ export default function App() {
   const [trainingStatus, setTrainingStatus] = useState(null)
   const [trainingError, setTrainingError] = useState('')
 
-  // ============== UI STATE (demo mode: full interactive explanations) ==============
+  // ============== UI STATE ==============
   const [explanationMode, setExplanationMode] = useState('plain')
-
-  // No-op for any legacy tracking; no participant/session data collected (SLR demo only)
-  const trackInteraction = useCallback(async () => {}, [])
-
-  const trackSectionEnter = () => {}
-
-  const handleHoverStart = () => {}
-
-  const handleHoverEnd = async () => {}
 
   // ============== DATA LOADING ==============
   const loadRanges = useCallback(async () => {
@@ -176,7 +161,6 @@ export default function App() {
       setDatasetSummary(result.summary || null)
       setCompareIndex(null)
       setResultB(null)
-      trackInteraction('load_dataset', { source: 'catalog', dataset_id: datasetId, domain: result.info?.domain, row_count: result.rows?.length || 0 })
       
       // Run batch predictions if model is compatible
       if (result.model_compatible && result.rows?.length) {
@@ -215,7 +199,6 @@ export default function App() {
         modelCompatible: true, // User uploads are assumed compatible
       })
       loadRanges()
-      trackInteraction('load_dataset', { source: 'recent_upload', upload_id: uploadId, row_count: result.row_count })
     } catch (e) {
       setError(e.message)
       setRows([])
@@ -241,7 +224,6 @@ export default function App() {
       
       // Refresh recent uploads list
       getRecentUploads().then(r => setRecentUploads(r.uploads || [])).catch(() => {})
-      trackInteraction('upload_dataset', { filename: f.name, row_count: u.row_count })
       
       // Open training wizard for the uploaded file
       openTrainingWizard(u.upload_id, f.name, u.sample || [])
@@ -390,7 +372,6 @@ export default function App() {
   const runDecision = useCallback(async (row, isWhatIf = false) => {
     setDeciding(true)
     setError('')
-    const startTime = Date.now()
     try {
       // Use domain-aware decision if we have an active dataset with a domain ID
       let r
@@ -400,22 +381,13 @@ export default function App() {
         r = await requestDecision(row)
       }
       setResult(r)
-      const elapsed = Date.now() - startTime
-      trackInteraction('view_decision', {
-        decision: r.decision?.decision,
-        confidence: r.decision?.confidence,
-        is_whatif: isWhatIf,
-        response_time_ms: elapsed,
-        domain_id: activeDataset?.id,
-        explanation_fidelity: r.explanation_fidelity,
-      })
       return r
     } catch (e) {
       setError(e.message)
     } finally {
       setDeciding(false)
     }
-  }, [trackInteraction, activeDataset])
+  }, [activeDataset])
 
   const runDecisionB = useCallback(async (row) => {
     setDecidingB(true)
@@ -450,27 +422,22 @@ export default function App() {
     setBaselineResult(null)
     setCompareIndex(null)
     setResultB(null)
-    trackInteraction('select_row', { row_index: index })
-    trackSectionEnter('decision')
     const r = await runDecision(row)
     if (r) setBaselineResult(r)
   }
 
   const onWhatIfChange = (feature, value) => {
-    if (!DEMO_MODE) return
     const base = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
     if (!base) return
     const next = { ...base }
     next[feature] = value
     setWhatIfRow(next)
-    trackInteraction('whatif_adjust', { feature, value, previous: base[feature] })
   }
 
   const onApplyWhatIf = async () => {
     const row = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
     if (!row) return
     setResult(null)
-    trackInteraction('whatif_apply', { modified_features: Object.keys(whatIfRow || {}) })
     // Run decision but preserve baseline for comparison
     await runDecision(row, true)
   }
@@ -478,7 +445,6 @@ export default function App() {
   const onResetToBaseline = () => {
     setWhatIfRow(null)
     if (baselineResult) setResult(baselineResult)
-    trackInteraction('whatif_reset', {})
   }
 
   // Apply a counterfactual suggestion to What-If sliders and run decision
@@ -557,11 +523,7 @@ export default function App() {
   }
 
   const handleModeChange = (mode) => {
-    if (!DEMO_MODE) return
-    const from = explanationMode
     setExplanationMode(mode)
-    trackInteraction('change_mode', { from, to: mode })
-    trackSectionEnter(mode)
   }
 
 
@@ -569,7 +531,6 @@ export default function App() {
     if (!result) return
     try {
       await exportReport(format, result)
-      trackInteraction('export', { format })
     } catch (e) {
       setError(e.message)
     }
@@ -586,8 +547,6 @@ export default function App() {
     : []
 
   const activeRow = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
-  const isStaticMode = false
-  const isMinimalMode = false
   const trustCal = result?.trust_calibration
 
   // Persist theme and apply class
@@ -654,7 +613,7 @@ export default function App() {
     loadDatasetCatalog()
   }, [loadDatasetCatalog])
 
-  // ============== RENDER: MAIN APP (Demo — no study, no participants, no questionnaires) ==============
+  // ============== RENDER: MAIN APP ==============
   return (
     <div className={`app theme-${theme}`} role="application" aria-label="PRISM Explainable AI">
       <header className="header">
@@ -1172,7 +1131,7 @@ export default function App() {
         )}
         
         {rows.length > 0 ? (
-          <div className="table-wrap" onMouseEnter={() => trackSectionEnter('dataset')}>
+          <div className="table-wrap">
             {/* Table header with search and filter */}
             <div className="table-header">
               <p className="muted">
@@ -1292,27 +1251,23 @@ export default function App() {
       </section>
 
       {(selectedIndex != null || result) && (
-      <section ref={explanationSectionRef} className="section" onMouseEnter={() => trackSectionEnter('explanation')}>
+      <section ref={explanationSectionRef} className="section">
         <h2>Explanation</h2>
         
-        {/* Mode toggle - interactive only */}
-        {DEMO_MODE && (
-          <div className="explanation-mode-toggle">
-            <span className="muted">Mode: </span>
-            {['plain', 'technical', 'whatif'].map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={explanationMode === m ? 'active' : ''}
-                onClick={() => handleModeChange(m)}
-                onMouseEnter={handleHoverStart}
-                onMouseLeave={() => handleHoverEnd(`mode_${m}`)}
-              >
-                {m === 'plain' ? 'Plain Language' : m === 'technical' ? 'Technical' : 'What-If'}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Mode toggle */}
+        <div className="explanation-mode-toggle">
+          <span className="muted">Mode: </span>
+          {['plain', 'technical', 'whatif'].map((m) => (
+            <button
+              key={m}
+              type="button"
+              className={explanationMode === m ? 'active' : ''}
+              onClick={() => handleModeChange(m)}
+            >
+              {m === 'plain' ? 'Plain Language' : m === 'technical' ? 'Technical' : 'What-If'}
+            </button>
+          ))}
+        </div>
 
         {deciding && <p className="muted">Computing decision…</p>}
         {decidingB && compareIndex != null && <p className="muted">Computing second decision…</p>}
@@ -1375,7 +1330,7 @@ export default function App() {
             ) : (
             <>
             {/* ========== PRIMARY: DECISION CARD (most prominent) ========== */}
-            <div className="decision-card decision-primary" onMouseEnter={handleHoverStart} onMouseLeave={() => handleHoverEnd('decision')}>
+            <div className="decision-card decision-primary">
               <div className="decision-header">
                 <h3>PRISM Decision</h3>
                 <div className="decision-header-badges">
@@ -1387,7 +1342,7 @@ export default function App() {
                       Explanation: {result.explanation_fidelity.prediction_match ? 'High confidence' : 'Lower confidence'}
                     </span>
                   )}
-                  {DEMO_MODE && trustCal && (
+                  {trustCal && (
                     <span className="model-accuracy" title="Historical model accuracy">
                       Model accuracy: {((trustCal.historical_accuracy || 0) * 100).toFixed(0)}%
                     </span>
@@ -1425,12 +1380,10 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                    {!isMinimalMode && (
-                      <div className="probability-breakdown">
-                        <span className="prob-item positive">P({posLabel}): {(posProb * 100).toFixed(1)}%</span>
-                        <span className="prob-item negative">P({negLabel}): {(negProb * 100).toFixed(1)}%</span>
-                      </div>
-                    )}
+                    <div className="probability-breakdown">
+                      <span className="prob-item positive">P({posLabel}): {(posProb * 100).toFixed(1)}%</span>
+                      <span className="prob-item negative">P({negLabel}): {(negProb * 100).toFixed(1)}%</span>
+                    </div>
                     {/* Stability warning inline */}
                     {result.uncertainty?.warning && (
                       <div className="stability-warning">
@@ -1443,211 +1396,172 @@ export default function App() {
               })()}
             </div>
 
-            {/* MINIMAL MODE: Just decision */}
-            {isMinimalMode && (
-              <p className="muted minimal-note">This is the baseline condition showing only the decision outcome.</p>
+            {/* Plain language explanation */}
+            {(explanationMode === 'plain' || explanationMode === 'whatif') && result.explanation_layer && (
+              <div className="explanation-layer-card">
+                <h3>Explanation</h3>
+                <p className="directional-reasoning">{result.explanation_layer.directional_reasoning}</p>
+                <ul className="plain-language-bullets">
+                  {result.explanation_layer.bullets?.map((b, i) => <li key={i}>{b}</li>)}
+                </ul>
+              </div>
             )}
 
-            {/* STATIC MODE: Simple explanation */}
-            {isStaticMode && result.explanation_layer && (
-              <div className="static-explanation-card">
-                <h3>Key Factors</h3>
-                <ul className="static-factors">
-                  {result.explanation_layer.bullets?.slice(0, 3).map((b, i) => (
-                    <li key={i}>{b}</li>
+            {/* Counterfactual preview */}
+            {result.counterfactual_preview?.length > 0 && explanationMode !== 'technical' && (
+              <div className="counterfactual-preview-card">
+                <h3>What Could Change the Outcome?</h3>
+                <ul>
+                  {result.counterfactual_preview.map((p, i) => (
+                    <li key={i}>
+                      {p.suggestion}
+                      {p.decision_factor && (p.current_value !== undefined || p.change_direction) && (
+                        <button
+                          type="button"
+                          className="try-this-btn"
+                          onClick={() => onApplyCounterfactual(p)}
+                        >
+                          Try this
+                        </button>
+                      )}
+                    </li>
                   ))}
                 </ul>
               </div>
             )}
 
-            {/* INTERACTIVE MODE: Full features */}
-            {DEMO_MODE && (
-              <>
-                {/* Plain language explanation */}
-                {(explanationMode === 'plain' || explanationMode === 'whatif') && result.explanation_layer && (
-                  <div 
-                    className="explanation-layer-card"
-                    onMouseEnter={handleHoverStart}
-                    onMouseLeave={() => handleHoverEnd('explanation_layer')}
-                  >
-                    <h3>Explanation</h3>
-                    <p className="directional-reasoning">{result.explanation_layer.directional_reasoning}</p>
-                    <ul className="plain-language-bullets">
-                      {result.explanation_layer.bullets?.map((b, i) => <li key={i}>{b}</li>)}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Counterfactual preview */}
-                {result.counterfactual_preview?.length > 0 && explanationMode !== 'technical' && (
-                  <div 
-                    className="counterfactual-preview-card"
-                    onMouseEnter={handleHoverStart}
-                    onMouseLeave={() => handleHoverEnd('counterfactual')}
-                  >
-                    <h3>What Could Change the Outcome?</h3>
-                    <ul>
-                      {result.counterfactual_preview.map((p, i) => (
-                        <li key={i}>
-                          {p.suggestion}
-                          {p.decision_factor && (p.current_value !== undefined || p.change_direction) && (
-                            <button
-                              type="button"
-                              className="try-this-btn"
-                              onClick={() => onApplyCounterfactual(p)}
-                            >
-                              Try this
-                            </button>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* What-if sliders - dynamic based on dataset */}
-                {explanationMode === 'whatif' && Object.keys(featureRanges).length > 0 && activeRow && (
-                  <div className="whatif-card">
-                    <div className="whatif-header">
-                      <h3>What-If Scenarios</h3>
-                      <label className="comparison-toggle">
-                        <input 
-                          type="checkbox" 
-                          checked={showComparison} 
-                          onChange={(e) => setShowComparison(e.target.checked)}
-                        />
-                        <span>Compare with original</span>
-                      </label>
+            {/* What-if sliders - dynamic based on dataset */}
+            {explanationMode === 'whatif' && Object.keys(featureRanges).length > 0 && activeRow && (
+              <div className="whatif-card">
+                <div className="whatif-header">
+                  <h3>What-If Scenarios</h3>
+                  <label className="comparison-toggle">
+                    <input 
+                      type="checkbox" 
+                      checked={showComparison} 
+                      onChange={(e) => setShowComparison(e.target.checked)}
+                    />
+                    <span>Compare with original</span>
+                  </label>
+                </div>
+                <p className="muted">Adjust values and see how the decision changes.</p>
+                
+                {/* Comparison View */}
+                {showComparison && baselineResult && result && whatIfRow && (
+                  <div className="whatif-comparison">
+                    <div className="comparison-column baseline">
+                      <div className="comparison-label">Original</div>
+                      <div className={`comparison-outcome ${baselineResult.decision?.decision === baselineResult.decision?.positive_label || baselineResult.decision?.decision === '+' ? 'positive' : 'negative'}`}>
+                        {baselineResult.decision?.decision === '+' ? 'Approved' : baselineResult.decision?.decision === '-' ? 'Rejected' : baselineResult.decision?.decision}
+                      </div>
+                      <div className="comparison-confidence">
+                        {((baselineResult.decision?.confidence ?? 0) * 100).toFixed(1)}%
+                      </div>
                     </div>
-                    <p className="muted">Adjust values and see how the decision changes.</p>
-                    
-                    {/* Comparison View */}
-                    {showComparison && baselineResult && result && whatIfRow && (
-                      <div className="whatif-comparison">
-                        <div className="comparison-column baseline">
-                          <div className="comparison-label">Original</div>
-                          <div className={`comparison-outcome ${baselineResult.decision?.decision === baselineResult.decision?.positive_label || baselineResult.decision?.decision === '+' ? 'positive' : 'negative'}`}>
-                            {baselineResult.decision?.decision === '+' ? 'Approved' : baselineResult.decision?.decision === '-' ? 'Rejected' : baselineResult.decision?.decision}
-                          </div>
-                          <div className="comparison-confidence">
-                            {((baselineResult.decision?.confidence ?? 0) * 100).toFixed(1)}%
-                          </div>
-                        </div>
-                        <div className="comparison-arrow">→</div>
-                        <div className="comparison-column modified">
-                          <div className="comparison-label">Modified</div>
-                          <div className={`comparison-outcome ${result.decision?.decision === result.decision?.positive_label || result.decision?.decision === '+' ? 'positive' : 'negative'}`}>
-                            {result.decision?.decision === '+' ? 'Approved' : result.decision?.decision === '-' ? 'Rejected' : result.decision?.decision}
-                          </div>
-                          <div className="comparison-confidence">
-                            {((result.decision?.confidence ?? 0) * 100).toFixed(1)}%
-                          </div>
-                        </div>
-                        {/* Change indicator */}
-                        {baselineResult.decision?.decision !== result.decision?.decision && (
-                          <div className="outcome-changed">
-                            Decision Changed!
-                          </div>
-                        )}
-                        {baselineResult.decision?.decision === result.decision?.decision && (
-                          <div className="confidence-delta">
-                            Confidence: {(((result.decision?.confidence ?? 0) - (baselineResult.decision?.confidence ?? 0)) * 100) >= 0 ? '+' : ''}
-                            {(((result.decision?.confidence ?? 0) - (baselineResult.decision?.confidence ?? 0)) * 100).toFixed(1)}%
-                          </div>
-                        )}
+                    <div className="comparison-arrow">→</div>
+                    <div className="comparison-column modified">
+                      <div className="comparison-label">Modified</div>
+                      <div className={`comparison-outcome ${result.decision?.decision === result.decision?.positive_label || result.decision?.decision === '+' ? 'positive' : 'negative'}`}>
+                        {result.decision?.decision === '+' ? 'Approved' : result.decision?.decision === '-' ? 'Rejected' : result.decision?.decision}
+                      </div>
+                      <div className="comparison-confidence">
+                        {((result.decision?.confidence ?? 0) * 100).toFixed(1)}%
+                      </div>
+                    </div>
+                    {baselineResult.decision?.decision !== result.decision?.decision && (
+                      <div className="outcome-changed">Decision Changed!</div>
+                    )}
+                    {baselineResult.decision?.decision === result.decision?.decision && (
+                      <div className="confidence-delta">
+                        Confidence: {(((result.decision?.confidence ?? 0) - (baselineResult.decision?.confidence ?? 0)) * 100) >= 0 ? '+' : ''}
+                        {(((result.decision?.confidence ?? 0) - (baselineResult.decision?.confidence ?? 0)) * 100).toFixed(1)}%
                       </div>
                     )}
-                    
-                    <div className="sliders">
-                      {Object.keys(featureRanges).slice(0, MAX_WHATIF_SLIDERS).map((f) => {
-                        const r = featureRanges[f]
-                        const min = r.min ?? 0
-                        const max = Math.max(r.max ?? 100, min + 1)
-                        const raw = activeRow[f]
-                        const originalRaw = selectedIndex != null ? rows[selectedIndex]?.[f] : null
-                        const val = typeof raw === 'number' && !Number.isNaN(raw) ? raw : (parseFloat(raw) || min)
-                        const originalVal = typeof originalRaw === 'number' && !Number.isNaN(originalRaw) ? originalRaw : (parseFloat(originalRaw) || min)
-                        const clamped = Math.min(max, Math.max(min, val))
-                        const step = Number.isInteger(min) && Number.isInteger(max) ? 1 : (max - min) / 100
-                        const isModified = whatIfRow && whatIfRow[f] !== undefined && Math.abs(val - originalVal) > 0.01
-                        return (
-                          <div key={f} className={`slider-row ${isModified ? 'modified' : ''}`}>
-                            <label>
-                              {r.label || f}: <strong>{typeof clamped === 'number' ? clamped.toFixed(1) : clamped}</strong>
-                              {isModified && showComparison && (
-                                <span className="original-value">(was {originalVal.toFixed(1)})</span>
-                              )}
-                            </label>
-                            <input
-                              type="range"
-                              min={min}
-                              max={max}
-                              step={step}
-                              value={clamped}
-                              onChange={(e) => onWhatIfChange(f, parseFloat(e.target.value))}
-                            />
-                          </div>
-                        )
-                      })}
-                    </div>
-                    {Object.keys(featureRanges).length > MAX_WHATIF_SLIDERS && (
-                      <p className="muted" style={{marginTop: 'var(--space-sm)', fontSize: '12px'}}>
-                        Showing {MAX_WHATIF_SLIDERS} of {Object.keys(featureRanges).length} numeric factors for clarity.
-                      </p>
-                    )}
-                    <div className="whatif-actions">
-                      <button type="button" className="whatif-apply" onClick={onApplyWhatIf} disabled={!whatIfRow}>
-                        Update Decision
-                      </button>
-                      <button type="button" className="whatif-reset" onClick={onResetToBaseline} disabled={!whatIfRow}>
-                        Reset to Original
-                      </button>
-                    </div>
                   </div>
                 )}
+                
+                <div className="sliders">
+                  {Object.keys(featureRanges).slice(0, MAX_WHATIF_SLIDERS).map((f) => {
+                    const r = featureRanges[f]
+                    const min = r.min ?? 0
+                    const max = Math.max(r.max ?? 100, min + 1)
+                    const raw = activeRow[f]
+                    const originalRaw = selectedIndex != null ? rows[selectedIndex]?.[f] : null
+                    const val = typeof raw === 'number' && !Number.isNaN(raw) ? raw : (parseFloat(raw) || min)
+                    const originalVal = typeof originalRaw === 'number' && !Number.isNaN(originalRaw) ? originalRaw : (parseFloat(originalRaw) || min)
+                    const clamped = Math.min(max, Math.max(min, val))
+                    const step = Number.isInteger(min) && Number.isInteger(max) ? 1 : (max - min) / 100
+                    const isModified = whatIfRow && whatIfRow[f] !== undefined && Math.abs(val - originalVal) > 0.01
+                    return (
+                      <div key={f} className={`slider-row ${isModified ? 'modified' : ''}`}>
+                        <label>
+                          {r.label || f}: <strong>{typeof clamped === 'number' ? clamped.toFixed(1) : clamped}</strong>
+                          {isModified && showComparison && (
+                            <span className="original-value">(was {originalVal.toFixed(1)})</span>
+                          )}
+                        </label>
+                        <input
+                          type="range"
+                          min={min}
+                          max={max}
+                          step={step}
+                          value={clamped}
+                          onChange={(e) => onWhatIfChange(f, parseFloat(e.target.value))}
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+                {Object.keys(featureRanges).length > MAX_WHATIF_SLIDERS && (
+                  <p className="muted" style={{marginTop: 'var(--space-sm)', fontSize: '12px'}}>
+                    Showing {MAX_WHATIF_SLIDERS} of {Object.keys(featureRanges).length} numeric factors for clarity.
+                  </p>
+                )}
+                <div className="whatif-actions">
+                  <button type="button" className="whatif-apply" onClick={onApplyWhatIf} disabled={!whatIfRow}>
+                    Update Decision
+                  </button>
+                  <button type="button" className="whatif-reset" onClick={onResetToBaseline} disabled={!whatIfRow}>
+                    Reset to Original
+                  </button>
+                </div>
+              </div>
+            )}
 
-                {/* Technical SHAP */}
-                {explanationMode === 'technical' && shapData.length > 0 && (
-                  <div 
-                    className="shap-card"
-                    onMouseEnter={handleHoverStart}
-                    onMouseLeave={() => handleHoverEnd('shap_chart')}
-                  >
-                    <h3>SHAP Feature Impact</h3>
-                    <p className="muted">Green = pushes toward approval, Red = pushes toward rejection</p>
-                    <div className="chart">
-                      <ResponsiveContainer width="100%" height={Math.max(300, shapData.length * 22)}>
-                        <BarChart data={[...shapData].reverse()} layout="vertical" margin={{ left: 8, right: 24 }}>
-                          <XAxis type="number" />
-                          <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 10 }} />
-                          <Tooltip formatter={(v) => [v?.toFixed(4), 'SHAP']} />
-                          <ReferenceLine x={0} stroke="#666" strokeDasharray="3 3" />
-                          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                            {[...shapData].reverse().map((d, i) => (
-                              <Cell key={i} fill={d.value >= 0 ? '#22c55e' : '#ef4444'} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
-              </>
+            {/* Technical SHAP */}
+            {explanationMode === 'technical' && shapData.length > 0 && (
+              <div className="shap-card">
+                <h3>SHAP Feature Impact</h3>
+                <p className="muted">Green = pushes toward approval, Red = pushes toward rejection</p>
+                <div className="chart">
+                  <ResponsiveContainer width="100%" height={Math.max(300, shapData.length * 22)}>
+                    <BarChart data={[...shapData].reverse()} layout="vertical" margin={{ left: 8, right: 24 }}>
+                      <XAxis type="number" />
+                      <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v) => [v?.toFixed(4), 'SHAP']} />
+                      <ReferenceLine x={0} stroke="#666" strokeDasharray="3 3" />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                        {[...shapData].reverse().map((d, i) => (
+                          <Cell key={i} fill={d.value >= 0 ? '#22c55e' : '#ef4444'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             )}
 
             {/* Export */}
-            {!isMinimalMode && (
-              <div className="export-actions">
-                <button type="button" onClick={() => handleExport('csv')}>Export CSV</button>
-                <button type="button" onClick={() => handleExport('pdf')}>Export PDF</button>
-                {Object.keys(rowPredictions).length > 0 && (
-                  <button type="button" onClick={handleBulkExport}>Export all (bulk CSV)</button>
-                )}
-                <button type="button" className="save-case-btn" onClick={addBookmark} disabled={!result || selectedIndex == null}>
-                  Save case
-                </button>
-              </div>
-            )}
+            <div className="export-actions">
+              <button type="button" onClick={() => handleExport('csv')}>Export CSV</button>
+              <button type="button" onClick={() => handleExport('pdf')}>Export PDF</button>
+              {Object.keys(rowPredictions).length > 0 && (
+                <button type="button" onClick={handleBulkExport}>Export all (bulk CSV)</button>
+              )}
+              <button type="button" className="save-case-btn" onClick={addBookmark} disabled={!result || selectedIndex == null}>
+                Save case
+              </button>
+            </div>
             </>
             )}
           </>

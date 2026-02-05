@@ -1,6 +1,5 @@
 """PRISM configuration."""
 from pathlib import Path
-from typing import Literal
 
 from pydantic_settings import BaseSettings
 
@@ -27,27 +26,8 @@ class Settings(BaseSettings):
     max_records: int = 50_000
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     
-    # ============== STUDY CONFIGURATION ==============
-    # Study identification
-    study_id: str = "prism_study_v1"
-    study_version: str = "1.0.0"
-    
-    # Reproducibility
-    random_seed: int = 42  # For task randomization and model consistency
-    
-    # Study conditions available
-    study_conditions: list[str] = ["interactive", "static", "minimal"]
-    
-    # Task configuration
-    tasks_per_session: int = 4
-    include_attention_checks: bool = True
-    attention_check_frequency: int = 2  # Every N tasks
-    randomize_task_order: bool = True
-    
-    # Data collection
-    log_hover_events: bool = True
-    log_scroll_events: bool = True
-    log_timing_events: bool = True
+    # Reproducibility (e.g. for model/training)
+    random_seed: int = 42
     
     class Config:
         env_prefix = "PRISM_"
@@ -57,6 +37,6 @@ class Settings(BaseSettings):
 settings = Settings()
 settings.artifacts_dir.mkdir(parents=True, exist_ok=True)
 
-# Create study data directory
-study_data_dir = settings.base_dir / "study_data"
-study_data_dir.mkdir(parents=True, exist_ok=True)
+# Data directory (for recent uploads and runtime data)
+data_dir = settings.base_dir / "app_data"
+data_dir.mkdir(parents=True, exist_ok=True)

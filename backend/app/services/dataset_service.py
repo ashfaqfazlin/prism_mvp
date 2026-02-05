@@ -19,7 +19,7 @@ class DatasetService:
     def __init__(self) -> None:
         self._datasets_dir = settings.base_dir / "datasets"
         self._catalog_path = self._datasets_dir / "catalog.json"
-        self._recent_uploads_path = settings.base_dir / "study_data" / "recent_uploads.json"
+        self._recent_uploads_path = settings.base_dir / "app_data" / "recent_uploads.json"
         self._catalog: list[dict[str, Any]] | None = None
         self._recent_uploads: list[dict[str, Any]] = []
         self._max_recent = 10  # Keep last 10 uploads
