@@ -4,6 +4,14 @@ An interactive explainable AI framework for decision support. PRISM combines **S
 
 ---
 
+## Try it live
+
+**[View PRISM →](https://prism-q8uo.onrender.com)**
+
+Use the link above to explore the live application in your browser—no installation required.
+
+---
+
 ## Table of Contents
 
 - [Features](#features)
@@ -13,7 +21,6 @@ An interactive explainable AI framework for decision support. PRISM combines **S
 - [Usage Guide](#usage-guide)
 - [Training Models](#training-models)
 - [Project Structure](#project-structure)
-- [Architecture](#architecture)
 - [API & Endpoints](#api--endpoints)
 - [Troubleshooting](#troubleshooting)
 - [Notes](#notes)
@@ -121,11 +128,13 @@ npm run dev
 
 | Service | URL |
 |---------|-----|
-| **App** | http://localhost:5173 |
+| **App (local)** | http://localhost:5173 |
 | **API** | http://localhost:8000 |
 | **API docs** | http://localhost:8000/docs |
 
 The frontend proxies `/api` requests to the backend, so use the app URL for normal use.
+
+**Prefer to skip setup?** [View the live app →](https://prism-q8uo.onrender.com)
 
 ---
 
@@ -214,82 +223,9 @@ prism_mvp/
 
 ---
 
-High-level architecture of the PRISM application:
-
-```mermaid
-flowchart TB
-    subgraph Client["Client (Browser)"]
-        UI[React + Vite\nApp.jsx, api.js]
-    end
-
-    subgraph Proxy["Dev Proxy"]
-        Vite["Vite dev server :5173\n/api → :8000"]
-    end
-
-    subgraph Backend["Backend (FastAPI :8000)"]
-        Router["API Router\nroutes.py"]
-        Router --> Catalog["/catalog, /datasets/*"]
-        Router --> Upload["/upload, /export"]
-        Router --> Predict["/predict, /batch-predict"]
-        Router --> Explain["/explain, /global-explainability"]
-        Router --> Train["/upload/*/analyze, configure, train"]
-    end
-
-    subgraph Services["Services Layer"]
-        DataSvc[DataService]
-        ModelSvc[ModelService\nDomainModelService]
-        ExplainSvc[ExplainabilityService\nDomainExplainabilityService]
-        ExplainLayer[Explanation Layer\nplain_language, SHAP, DiCE, uncertainty]
-        DatasetSvc[DatasetService]
-        AutoSchema[AutoSchemaService]
-        AutoTrain[AutoTrainerService]
-    end
-
-    subgraph Config["Configuration"]
-        DomainConfig[domain_config.py\nDomainConfig, list_domains]
-        AppConfig[config.py\nsettings]
-    end
-
-    subgraph Storage["Storage & Artifacts"]
-        Artifacts["artifacts/<domain_id>/\nmodel.joblib, preprocessing.joblib, meta.json"]
-        Datasets["datasets/\nCSV files, catalog.json"]
-    end
-
-    UI --> Vite
-    Vite --> Router
-    Catalog --> DatasetSvc
-    Upload --> DataSvc
-    Upload --> DatasetSvc
-    Predict --> ModelSvc
-    Predict --> DomainConfig
-    Explain --> ExplainSvc
-    Explain --> ExplainLayer
-    Train --> AutoSchema
-    Train --> AutoTrain
-
-    ModelSvc --> Artifacts
-    ExplainSvc --> Artifacts
-    DatasetSvc --> Datasets
-    AutoTrain --> Artifacts
-    DataSvc --> Datasets
-    DomainConfig --> AppConfig
-```
-
-**Flow summary:**
-
-| Layer | Components |
-|-------|------------|
-| **Client** | React SPA (Vite). Calls `/api/*`; dev server proxies to backend. |
-| **API** | FastAPI router: catalog/datasets, upload/export, predict/explain, training. |
-| **Services** | DataService, ModelService, DomainModelService, ExplainabilityService, Explanation Layer (SHAP, DiCE, plain language), DatasetService, AutoSchemaService, AutoTrainerService. |
-| **Config** | `domain_config.py` (per-domain schema, labels, paths), `config.py` (app settings). |
-| **Storage** | `artifacts/` (trained models per domain), `datasets/` (CSV + catalog). |
-
----
-
 ## API & Endpoints
 
-Key endpoints (see http://localhost:8000/docs for full OpenAPI spec):
+Key endpoints (see `/docs` on your API server for the full OpenAPI spec):
 
 - `GET /api/catalog` — List available datasets
 - `POST /api/upload` — Upload CSV
