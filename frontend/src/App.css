@@ -2751,3 +2751,134 @@ select:focus-visible {
   outline-offset: 2px;
 }
 
+/* ============== FULL-SCREEN LOADING ============== */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 12, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.theme-light .loading-screen {
+  background: rgba(250, 250, 252, 0.85);
+}
+
+.loading-screen-panel {
+  text-align: center;
+  padding: var(--space-2xl);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  max-width: 22rem;
+}
+
+.loading-screen-spinner {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto var(--space-md);
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: prism-spin 0.85s linear infinite;
+}
+
+@keyframes prism-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-screen-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.loading-screen-sub {
+  margin: var(--space-sm) 0 0;
+  font-size: 0.9rem;
+}
+
+/* ============== TECHNICAL SHAP HELP & TOOLTIP ============== */
+.shap-help-wrap {
+  margin: var(--space-md) 0;
+}
+
+.shap-help-toggle {
+  font-size: 0.85rem;
+}
+
+.shap-help-panel {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.shap-help-title {
+  margin: 0 0 var(--space-xs);
+  font-weight: 700;
+}
+
+.shap-x-note {
+  margin: var(--space-sm) 0 0;
+  font-size: 0.85rem;
+}
+
+.shap-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  margin: var(--space-md) 0 var(--space-sm);
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.shap-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.shap-legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.shap-legend-swatch.pos {
+  background: var(--color-success);
+}
+
+.shap-legend-swatch.neg {
+  background: var(--color-danger);
+}
+
+.shap-tooltip {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  font-size: 0.8rem;
+  max-width: 280px;
+  box-shadow: var(--shadow-md);
+}
+
+.shap-tooltip-title {
+  font-weight: 700;
+  margin-bottom: var(--space-xs);
+}
+
+.shap-tooltip-tech {
+  margin-top: var(--space-xs);
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+

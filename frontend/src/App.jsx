@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   getFeatureRanges,
+  getMeta,
   uploadCsv,
   requestDecision,
   exportReport,
@@ -24,6 +25,50 @@ const DEFAULT_FEATURE_COLS = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A
 // Max number of What-If sliders to show (for usability)
 const MAX_WHATIF_SLIDERS = 8
 
+/** Decode SHAP feature names from sklearn ColumnTransformer (num__ / cat__) to raw column names. */
+function decodeShapFeatureName(encoded) {
+  const s = String(encoded)
+  if (s.startsWith('num__')) return s.slice(5)
+  if (s.startsWith('cat__')) {
+    const rest = s.slice(5)
+    const i = rest.lastIndexOf('_')
+    return i > 0 ? rest.slice(0, i) : rest
+  }
+  return s
+}
+
+function titleCaseWords(str) {
+  return str.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+const DEFAULT_SHAP_GUIDE = {
+  title: 'How to read SHAP in PRISM',
+  summary:
+    'SHAP shows how much each factor pushed the model toward one outcome or the other for this row. It is not a probability and does not replace the final decision.',
+  points: [
+    'Each bar is one factor. Longer bars matter more for this prediction.',
+    'Green pushes toward the positive class label for this dataset; red pushes toward the negative class label.',
+    'Values are for this row only. Use “Overall factors” for typical importance across many rows.',
+    'SHAP explains model behaviour; it does not prove real-world cause and effect.',
+  ],
+  x_axis: 'SHAP value (contribution toward the positive class)',
+}
+
+function ShapChartTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null
+  const d = payload[0].payload
+  return (
+    <div className="shap-tooltip">
+      <div className="shap-tooltip-title">{d.fullName}</div>
+      <div>SHAP value: {Number(d.value).toFixed(4)}</div>
+      <div className="muted">Pushes prediction toward: {d.toward}</div>
+      {String(d.encoded) !== String(d.orig) && (
+        <div className="muted shap-tooltip-tech">Technical feature id: {d.encoded}</div>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   // ============== DATA STATE ==============
   const [rows, setRows] = useState([])
@@ -46,6 +91,8 @@ export default function App() {
   const [globalExplainabilityLoading, setGlobalExplainabilityLoading] = useState(false)
   const [showGlobalExplainability, setShowGlobalExplainability] = useState(false)
   const [showDecisionDetails, setShowDecisionDetails] = useState(false)
+  const [shapGuide, setShapGuide] = useState(null)
+  const [showShapHelp, setShowShapHelp] = useState(true)
   const [compareIndex, setCompareIndex] = useState(null) // Second row for compare mode (null = single view)
   const [resultB, setResultB] = useState(null)
   const [decidingB, setDecidingB] = useState(false)
@@ -181,6 +228,7 @@ export default function App() {
         accuracy: result.info?.accuracy,
         positiveLabel: result.info?.positive_label,
         negativeLabel: result.info?.negative_label,
+        featureLabels: result.info?.feature_labels || {},
       })
       const ranges = result.feature_ranges ?? {}
       if (Object.keys(ranges).length) setFeatureRanges(ranges)
@@ -575,16 +623,6 @@ export default function App() {
     }
   }
 
-  // Prepare SHAP visualization data
-  const names = result?.shap?.decision_factor_names ?? []
-  const shapData = names.length
-    ? names.map((n, i) => ({
-        name: String(n).length > 24 ? String(n).slice(-20) + '…' : n,
-        value: result.shap.values[i],
-        full: n,
-      }))
-    : []
-
   const activeRow = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
   const trustCal = result?.trust_calibration
   const trustAccuracyLabel = (() => {
@@ -594,6 +632,31 @@ export default function App() {
     if (acc >= 0.75) return 'Medium'
     return 'Low'
   })()
+
+  const shapRows = useMemo(() => {
+    const names = result?.shap?.decision_factor_names ?? []
+    const vals = result?.shap?.values ?? []
+    const fl = activeDataset?.featureLabels || {}
+    const pos = result?.decision?.positive_label || 'Positive'
+    const neg = result?.decision?.negative_label || 'Negative'
+    if (!names.length) return []
+    return names.map((n, i) => {
+      const orig = decodeShapFeatureName(String(n))
+      const labelRaw = fl[orig] || titleCaseWords(orig)
+      const label = String(labelRaw)
+      const v = vals[i] ?? 0
+      const toward = v >= 0 ? pos : neg
+      return {
+        key: `${String(n)}-${i}`,
+        name: label.length > 34 ? `${label.slice(0, 32)}…` : label,
+        fullName: label,
+        encoded: n,
+        orig,
+        value: v,
+        toward,
+      }
+    })
+  }, [result, activeDataset?.featureLabels])
 
   // Persist theme and apply class
   useEffect(() => {
@@ -659,9 +722,25 @@ export default function App() {
     loadDatasetCatalog()
   }, [loadDatasetCatalog])
 
+  // SHAP guide text from API (fallback if offline)
+  useEffect(() => {
+    getMeta()
+      .then((m) => setShapGuide(m.shap_guide || DEFAULT_SHAP_GUIDE))
+      .catch(() => setShapGuide(DEFAULT_SHAP_GUIDE))
+  }, [])
+
   // ============== RENDER: MAIN APP ==============
   return (
     <div className={`app theme-${theme}`} role="application" aria-label="PRISM Explainable AI">
+      {loading && (
+        <div className="loading-screen" role="alertdialog" aria-busy="true" aria-live="polite" aria-label="Loading PRISM">
+          <div className="loading-screen-panel">
+            <div className="loading-screen-spinner" aria-hidden />
+            <p className="loading-screen-title">Loading PRISM</p>
+            <p className="muted loading-screen-sub">Preparing your dataset and explanations…</p>
+          </div>
+        </div>
+      )}
       <header className="header">
         <div className="header-row">
           <div>
@@ -722,7 +801,12 @@ export default function App() {
             )}
             {tourStep === 1 && <p>Choose a dataset from the catalog or upload your own CSV. Then select a row in the table.</p>}
             {tourStep === 2 && <p>Click a row to see PRISM&apos;s decision, confidence, and explanation. Use Ctrl/Cmd+click on another row to compare two rows side-by-side.</p>}
-            {tourStep === 3 && <p>Switch between Plain Language and What-If modes. Use &quot;Try this&quot; on suggestions to apply changes to the sliders.</p>}
+            {tourStep === 3 && (
+              <p>
+                Switch between Plain Language, Technical (SHAP), and What-If modes. Technical view shows factor-level contributions with a short guide.
+                Use &quot;Try this&quot; on suggestions to apply changes to the sliders.
+              </p>
+            )}
             {tourStep === 4 && <p>You can bookmark cases, export CSV/PDF, and filter or search the table. Enjoy exploring!</p>}
             <div className="tour-actions">
               {tourStep < 4 ? (
@@ -1199,12 +1283,6 @@ export default function App() {
           </div>
         )}
         
-        {loading && (
-          <p className="muted">
-            Loading dataset and preparing explanations (typically under 30 seconds)…
-          </p>
-        )}
-        
         {/* Model compatibility warning */}
         {activeDataset && !activeDataset.modelCompatible && rows.length > 0 && (
           <div className="banner warning">
@@ -1321,7 +1399,7 @@ export default function App() {
         ) : (
           <div className="empty-dataset-prompt">
             <p>Select a dataset to begin exploring PRISM explanations.</p>
-            <p className="muted">Choose from 11 pre-loaded datasets across Finance, Healthcare, Education, Employment, Insurance, and Legal domains — or upload your own CSV.</p>
+            <p className="muted">Choose from curated demo datasets across multiple domains — or upload your own CSV.</p>
             <button 
               type="button" 
               className="select-dataset-btn"
@@ -1340,14 +1418,14 @@ export default function App() {
         {/* Mode toggle */}
         <div className="explanation-mode-toggle">
           <span className="muted">Mode: </span>
-          {['plain', 'whatif'].map((m) => (
+          {['plain', 'technical', 'whatif'].map((m) => (
             <button
               key={m}
               type="button"
               className={explanationMode === m ? 'active' : ''}
               onClick={() => handleModeChange(m)}
             >
-              {m === 'plain' ? 'Plain Language' : 'What-If'}
+              {m === 'plain' ? 'Plain Language' : m === 'technical' ? 'Technical (SHAP)' : 'What-If'}
             </button>
           ))}
         </div>
@@ -1740,26 +1818,73 @@ export default function App() {
               </div>
             )}
 
-            {/* Technical SHAP */}
-            {explanationMode === 'technical' && shapData.length > 0 && (
-              <div className="shap-card">
-                <h3>SHAP Feature Impact</h3>
-                <p className="muted">Green = pushes toward approval, Red = pushes toward rejection</p>
-                <div className="chart">
-                  <ResponsiveContainer width="100%" height={Math.max(300, shapData.length * 22)}>
-                    <BarChart data={[...shapData].reverse()} layout="vertical" margin={{ left: 8, right: 24 }}>
-                      <XAxis type="number" />
-                      <YAxis type="category" dataKey="name" width={160} tick={{ fontSize: 10 }} />
-                      <Tooltip formatter={(v) => [v?.toFixed(4), 'SHAP']} />
-                      <ReferenceLine x={0} stroke="#666" strokeDasharray="3 3" />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {[...shapData].reverse().map((d, i) => (
-                          <Cell key={i} fill={d.value >= 0 ? '#22c55e' : '#ef4444'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+            {/* Technical SHAP (per-row factor contributions) */}
+            {explanationMode === 'technical' && (
+              <div className="shap-card" role="region" aria-label="Technical SHAP explanation">
+                <h3>Technical view: SHAP</h3>
+                <p className="muted">
+                  SHAP values describe how strongly each factor pushed the model toward one side of the prediction for this row only.
+                </p>
+
+                {shapGuide && (
+                  <div className="shap-help-wrap">
+                    <button
+                      type="button"
+                      className="btn secondary shap-help-toggle"
+                      onClick={() => setShowShapHelp((s) => !s)}
+                      aria-expanded={showShapHelp}
+                    >
+                      {showShapHelp ? 'Hide how to read this' : 'How to read this chart'}
+                    </button>
+                    {showShapHelp && (
+                      <div className="shap-help-panel">
+                        <p className="shap-help-title">{shapGuide.title}</p>
+                        <p className="muted">{shapGuide.summary}</p>
+                        <ul className="plain-language-bullets">
+                          {(shapGuide.points || []).map((pt, i) => (
+                            <li key={i}>{pt}</li>
+                          ))}
+                        </ul>
+                        {shapGuide.x_axis && (
+                          <p className="muted shap-x-note">
+                            <strong>Horizontal axis:</strong> {shapGuide.x_axis}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="shap-legend-row" aria-hidden="true">
+                  <span className="shap-legend-item">
+                    <span className="shap-legend-swatch pos" /> Toward {result.decision?.positive_label || 'positive outcome'}
+                  </span>
+                  <span className="shap-legend-item">
+                    <span className="shap-legend-swatch neg" /> Toward {result.decision?.negative_label || 'negative outcome'}
+                  </span>
                 </div>
+
+                {shapRows.length > 0 ? (
+                  <div className="chart">
+                    <ResponsiveContainer width="100%" height={Math.max(320, shapRows.length * 26)}>
+                      <BarChart data={[...shapRows].reverse()} layout="vertical" margin={{ left: 8, right: 28, bottom: 8 }}>
+                        <XAxis type="number" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" width={168} tick={{ fontSize: 11 }} />
+                        <Tooltip content={<ShapChartTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                        <ReferenceLine x={0} stroke="#666" strokeDasharray="3 3" />
+                        <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                          {[...shapRows].reverse().map((d, i) => (
+                            <Cell key={d.key || i} fill={d.value >= 0 ? '#22c55e' : '#ef4444'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <p className="muted">
+                    SHAP values are not available for this row. If this persists, the explanation service may have failed for this input.
+                  </p>
+                )}
               </div>
             )}
 

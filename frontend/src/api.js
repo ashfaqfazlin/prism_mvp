@@ -24,6 +24,11 @@ export async function health() {
   return req('/health');
 }
 
+/** API metadata, endpoint map, and SHAP explanation guide (for Technical mode UI). */
+export async function getMeta() {
+  return req('/meta');
+}
+
 export async function getDefaultDataset(limit = 50) {
   return req(`/datasets/default?limit=${limit}`);
 }
