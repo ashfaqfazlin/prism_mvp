@@ -43,6 +43,8 @@ export default function App() {
   const [tableSearch, setTableSearch] = useState('') // Search/filter text in table
   const [datasetSummary, setDatasetSummary] = useState(null) // { class_balance, row_count, feature_count, positive_count?, negative_count? }
   const [globalExplainability, setGlobalExplainability] = useState(null) // { feature_names, mean_abs_shap, feature_labels }
+  const [globalExplainabilityLoading, setGlobalExplainabilityLoading] = useState(false)
+  const [showGlobalExplainability, setShowGlobalExplainability] = useState(false)
   const [compareIndex, setCompareIndex] = useState(null) // Second row for compare mode (null = single view)
   const [resultB, setResultB] = useState(null)
   const [decidingB, setDecidingB] = useState(false)
@@ -54,6 +56,7 @@ export default function App() {
   const [tourStep, setTourStep] = useState(null) // null | 0 | 1 | 2 | 3 | 4 (0=start, 4=done)
   const [theme, setTheme] = useState(() => localStorage.getItem('prism_theme') || 'dark') // 'dark' | 'light'
   const explanationSectionRef = useRef(null)
+  const whatIfDebounceRef = useRef(null)
   
   // ============== DATASET PICKER STATE ==============
   const [datasetCatalog, setDatasetCatalog] = useState([])
@@ -92,7 +95,7 @@ export default function App() {
   const loadDatasetCatalog = useCallback(async () => {
     try {
       const [catalog, uploads] = await Promise.all([
-        getDatasetCatalog(false),
+        getDatasetCatalog(true),
         getRecentUploads(),
       ])
       setDatasetCatalog(catalog.datasets || [])
@@ -101,6 +104,25 @@ export default function App() {
       console.error('Failed to load dataset catalog:', e)
     }
   }, [])
+
+  const onShowGlobalExplainability = useCallback(async () => {
+    if (!activeDataset?.id || !activeDataset?.modelCompatible) return
+    if (globalExplainabilityLoading) return
+
+    setGlobalExplainabilityLoading(true)
+    setShowGlobalExplainability(true)
+    setGlobalExplainability(null)
+    try {
+      // Keep this fast enough for a demo experience.
+      const g = await getGlobalExplainability(activeDataset.id, 20)
+      setGlobalExplainability(g)
+    } catch (e) {
+      console.error('Global explainability failed:', e)
+      setGlobalExplainability(null)
+    } finally {
+      setGlobalExplainabilityLoading(false)
+    }
+  }, [activeDataset?.id, activeDataset?.modelCompatible, globalExplainabilityLoading])
 
   // Run batch predictions for all rows
   const runBatchPredictions = useCallback(async (domainId, rowsData) => {
@@ -137,8 +159,11 @@ export default function App() {
     setShowDatasetPicker(false)
     setRowPredictions({}) // Clear previous predictions
     setPredictionFilter('all')
+    setGlobalExplainability(null)
+    setShowGlobalExplainability(false)
+    setGlobalExplainabilityLoading(false)
     try {
-      const result = await loadDataset(datasetId, 80)
+      const result = await loadDataset(datasetId, 40)
       setColumns(result.columns || DEFAULT_FEATURE_COLS)
       setRows(result.rows || [])
       setSelectedIndex(null)
@@ -164,14 +189,11 @@ export default function App() {
       
       // Run batch predictions if model is compatible
       if (result.model_compatible && result.rows?.length) {
-        runBatchPredictions(datasetId, result.rows)
+        // Speed: only compute predictions for the rows we actually display.
+        runBatchPredictions(datasetId, result.rows.slice(0, 30))
       }
-      // Fetch global explainability (dataset-level feature importance)
-      if (result.model_compatible) {
-        getGlobalExplainability(datasetId, 50).then(setGlobalExplainability).catch(() => setGlobalExplainability(null))
-      } else {
-        setGlobalExplainability(null)
-      }
+      // Global explainability is intentionally fetched on demand (user clicks),
+      // to keep dataset loading under control.
     } catch (e) {
       setError(e.message)
       setRows([])
@@ -416,6 +438,8 @@ export default function App() {
       if (r) setResultB(r)
       return
     }
+    if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
+    setExplanationMode('plain')
     setSelectedIndex(index)
     setResult(null)
     setWhatIfRow(null)
@@ -432,24 +456,33 @@ export default function App() {
     const next = { ...base }
     next[feature] = value
     setWhatIfRow(next)
+    setExplanationMode('whatif')
+    // Debounced re-run so sliders feel responsive without spamming the API.
+    if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
+    whatIfDebounceRef.current = setTimeout(() => {
+      runDecision(next, true)
+    }, 450)
   }
 
   const onApplyWhatIf = async () => {
     const row = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
     if (!row) return
+    if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
     setResult(null)
     // Run decision but preserve baseline for comparison
     await runDecision(row, true)
   }
   
   const onResetToBaseline = () => {
+    if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
     setWhatIfRow(null)
     if (baselineResult) setResult(baselineResult)
+    setExplanationMode('plain')
   }
 
   // Apply a counterfactual suggestion to What-If sliders and run decision
   const onApplyCounterfactual = (cf) => {
-    const base = selectedIndex != null ? rows[selectedIndex] : null
+    const base = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
     if (!base || !cf?.decision_factor) return
     const next = { ...base }
     if (cf.current_value !== undefined && cf.change_direction === 'improve' && typeof cf.current_value === 'number') {
@@ -460,7 +493,8 @@ export default function App() {
     }
     setWhatIfRow(next)
     setExplanationMode('whatif')
-    setTimeout(() => runDecision(next, true), 100)
+    if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
+    setTimeout(() => runDecision(next, true), 120)
   }
 
   const addBookmark = () => {
@@ -676,7 +710,7 @@ export default function App() {
             )}
             {tourStep === 1 && <p>Choose a dataset from the catalog or upload your own CSV. Then select a row in the table.</p>}
             {tourStep === 2 && <p>Click a row to see PRISM&apos;s decision, confidence, and explanation. Use Ctrl/Cmd+click on another row to compare two rows side-by-side.</p>}
-            {tourStep === 3 && <p>Switch between Plain Language, Technical (SHAP), and What-If modes. Use &quot;Try this&quot; on suggestions to apply them to the sliders.</p>}
+            {tourStep === 3 && <p>Switch between Plain Language and What-If modes. Use &quot;Try this&quot; on suggestions to apply changes to the sliders.</p>}
             {tourStep === 4 && <p>You can bookmark cases, export CSV/PDF, and filter or search the table. Enjoy exploring!</p>}
             <div className="tour-actions">
               {tourStep < 4 ? (
@@ -983,27 +1017,56 @@ export default function App() {
                 )}
               </div>
             )}
-            {/* Global explainability (model-level feature importance) */}
-            {globalExplainability?.feature_names?.length > 0 && (
+            {/* Global explainability (fetched on demand) */}
+            {activeDataset?.modelCompatible && (
               <div className="global-explainability" role="region" aria-label="Model overview">
-                <h4>What drives this model (overall)</h4>
-                <p className="muted">Mean impact of each factor across a sample of rows (global SHAP).</p>
-                <div className="global-shap-bars">
-                  {globalExplainability.feature_names.slice(0, 10).map((name, i) => {
-                    const label = globalExplainability.feature_labels?.[name] || name
-                    const val = globalExplainability.mean_abs_shap?.[i] ?? 0
-                    const maxVal = Math.max(...(globalExplainability.mean_abs_shap || [1]), 0.01)
-                    return (
-                      <div key={name} className="global-shap-row">
-                        <span className="global-shap-label" title={name}>{String(label).slice(0, 24)}{String(label).length > 24 ? '…' : ''}</span>
-                        <div className="global-shap-bar-bg">
-                          <div className="global-shap-bar-fill" style={{ width: `${(val / maxVal) * 100}%` }} />
-                        </div>
-                        <span className="global-shap-val">{val.toFixed(3)}</span>
-                      </div>
-                    )
-                  })}
-                </div>
+                {!showGlobalExplainability && !globalExplainabilityLoading && (
+                  <>
+                    <h4>Overall factors PRISM looks at</h4>
+                    <p className="muted">
+                      These are the factors that tend to matter most across many rows in this dataset.
+                      It is a general overview, not an explanation for the exact row you selected.
+                    </p>
+                    <button type="button" className="btn secondary" onClick={onShowGlobalExplainability}>
+                      Show overall factors
+                    </button>
+                  </>
+                )}
+
+                {globalExplainabilityLoading && (
+                  <p className="muted">Loading overall factors…</p>
+                )}
+
+                {showGlobalExplainability && globalExplainability?.feature_names?.length > 0 && (
+                  <>
+                    <h4>Overall factors PRISM looks at</h4>
+                    <p className="muted">Top factors ranked by overall influence (global SHAP).</p>
+                    <div className="global-shap-bars">
+                      {globalExplainability.feature_names.slice(0, 8).map((name, i) => {
+                        const label = globalExplainability.feature_labels?.[name] || name
+                        const val = globalExplainability.mean_abs_shap?.[i] ?? 0
+                        const maxVal = Math.max(...(globalExplainability.mean_abs_shap || [1]), 0.01)
+                        const ratio = val / maxVal
+                        const strength = ratio >= 0.66 ? 'Strong' : ratio >= 0.33 ? 'Medium' : 'Low'
+                        return (
+                          <div key={name} className="global-shap-row">
+                            <span
+                              className="global-shap-label"
+                              title={`${label}\nOverall influence: ${strength}\nValue: ${val.toFixed(4)} (internal scoring)`}
+                            >
+                              {String(label).slice(0, 24)}
+                              {String(label).length > 24 ? '…' : ''}
+                            </span>
+                            <div className="global-shap-bar-bg">
+                              <div className="global-shap-bar-fill" style={{ width: `${ratio * 100}%` }} />
+                            </div>
+                            <span className="global-shap-val">{strength}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1120,7 +1183,11 @@ export default function App() {
           </div>
         )}
         
-        {loading && <p className="muted">Loading…</p>}
+        {loading && (
+          <p className="muted">
+            Loading dataset and preparing explanations (typically under 30 seconds)…
+          </p>
+        )}
         
         {/* Model compatibility warning */}
         {activeDataset && !activeDataset.modelCompatible && rows.length > 0 && (
@@ -1231,7 +1298,7 @@ export default function App() {
             {predictingBatch && (
               <div className="batch-prediction-loading">
                 <span className="spinner"></span>
-                <span>Computing predictions for all rows...</span>
+                <span>Computing predictions for visible rows...</span>
               </div>
             )}
           </div>
@@ -1257,14 +1324,14 @@ export default function App() {
         {/* Mode toggle */}
         <div className="explanation-mode-toggle">
           <span className="muted">Mode: </span>
-          {['plain', 'technical', 'whatif'].map((m) => (
+          {['plain', 'whatif'].map((m) => (
             <button
               key={m}
               type="button"
               className={explanationMode === m ? 'active' : ''}
               onClick={() => handleModeChange(m)}
             >
-              {m === 'plain' ? 'Plain Language' : m === 'technical' ? 'Technical' : 'What-If'}
+              {m === 'plain' ? 'Plain Language' : 'What-If'}
             </button>
           ))}
         </div>
@@ -1399,7 +1466,10 @@ export default function App() {
             {/* Plain language explanation */}
             {(explanationMode === 'plain' || explanationMode === 'whatif') && result.explanation_layer && (
               <div className="explanation-layer-card">
-                <h3>Explanation</h3>
+                <h3>In plain words</h3>
+                <p className="muted">
+                  PRISM explains a decision in a human-friendly way by highlighting the strongest factors behind the prediction.
+                </p>
                 <p className="directional-reasoning">{result.explanation_layer.directional_reasoning}</p>
                 <ul className="plain-language-bullets">
                   {result.explanation_layer.bullets?.map((b, i) => <li key={i}>{b}</li>)}
@@ -1408,7 +1478,7 @@ export default function App() {
             )}
 
             {/* Counterfactual preview */}
-            {result.counterfactual_preview?.length > 0 && explanationMode !== 'technical' && (
+            {result.counterfactual_preview?.length > 0 && explanationMode === 'plain' && (
               <div className="counterfactual-preview-card">
                 <h3>What Could Change the Outcome?</h3>
                 <ul>
@@ -1444,7 +1514,10 @@ export default function App() {
                     <span>Compare with original</span>
                   </label>
                 </div>
-                <p className="muted">Adjust values and see how the decision changes.</p>
+                <p className="muted">
+                  Adjust sliders to see what would happen. PRISM explains why and suggests what to try next.
+                </p>
+                {deciding && <p className="muted">Updating decision…</p>}
                 
                 {/* Comparison View */}
                 {showComparison && baselineResult && result && whatIfRow && (
@@ -1479,6 +1552,75 @@ export default function App() {
                     )}
                   </div>
                 )}
+
+                {/* Why / What / How simulation for the What-If mode */}
+                {baselineResult && result && whatIfRow && (
+                  <div className="whatif-whw-card">
+                    <div className="whw-block">
+                      <h4>Why the original decision happened</h4>
+                      <p className="muted">
+                        {baselineResult.explanation_layer?.directional_reasoning || 'PRISM explains the key factors behind the decision.'}
+                      </p>
+                      {baselineResult.explanation_layer?.bullets?.length > 0 && (
+                        <ul className="plain-language-bullets">
+                          {baselineResult.explanation_layer.bullets.slice(0, 2).map((b, i) => <li key={i}>{b}</li>)}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="whw-block">
+                      <h4>What you changed</h4>
+                      {(() => {
+                        const baseRow = selectedIndex != null ? rows[selectedIndex] : null
+                        if (!baseRow || !whatIfRow) return <p className="muted">Adjust sliders to see changes.</p>
+                        const changed = Object.keys(featureRanges).slice(0, MAX_WHATIF_SLIDERS).filter((f) => {
+                          const a = baseRow?.[f]
+                          const b = whatIfRow?.[f]
+                          const aNum = typeof a === 'number' ? a : parseFloat(a)
+                          const bNum = typeof b === 'number' ? b : parseFloat(b)
+                          if (Number.isNaN(aNum) || Number.isNaN(bNum)) return a !== b
+                          return Math.abs(aNum - bNum) > 0.01
+                        })
+                        if (changed.length === 0) return <p className="muted">No slider changes detected yet.</p>
+                        return (
+                          <ul className="plain-language-bullets">
+                            {changed.slice(0, 3).map((f) => (
+                              <li key={f}>
+                                {featureRanges[f]?.label || f}: {String(baseRow?.[f] ?? '—')} → {String(whatIfRow?.[f] ?? '—')}
+                              </li>
+                            ))}
+                          </ul>
+                        )
+                      })()}
+                    </div>
+
+                    <div className="whw-block">
+                      <h4>How to move the outcome next</h4>
+                      {result.counterfactual_preview?.length > 0 ? (
+                        <ul className="plain-language-bullets">
+                          {result.counterfactual_preview.slice(0, 3).map((p, i) => (
+                            <li key={i}>
+                              {p.suggestion}
+                              {p.decision_factor && featureRanges?.[p.decision_factor] && (
+                                <button
+                                  type="button"
+                                  className="try-this-btn"
+                                  onClick={() => onApplyCounterfactual(p)}
+                                  disabled={deciding}
+                                  style={{ marginLeft: 'var(--space-xs)' }}
+                                >
+                                  Try this
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="muted">Try adjusting sliders again to see PRISM suggestions.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 
                 <div className="sliders">
                   {Object.keys(featureRanges).slice(0, MAX_WHATIF_SLIDERS).map((f) => {
@@ -1495,7 +1637,17 @@ export default function App() {
                     return (
                       <div key={f} className={`slider-row ${isModified ? 'modified' : ''}`}>
                         <label>
-                          {r.label || f}: <strong>{typeof clamped === 'number' ? clamped.toFixed(1) : clamped}</strong>
+                          {r.label || f}:{' '}
+                          <strong
+                            title={[
+                              `${r.label || f}`,
+                              `Current value: ${typeof clamped === 'number' ? clamped.toFixed(1) : clamped}`,
+                              r.mean != null ? `Typical value (sample mean): ${Number(r.mean).toFixed(1)}` : null,
+                              `Range (sampled): ${min.toFixed ? min.toFixed(1) : min} - ${max.toFixed ? max.toFixed(1) : max}`,
+                            ].filter(Boolean).join('\n')}
+                          >
+                            {typeof clamped === 'number' ? clamped.toFixed(1) : clamped}
+                          </strong>
                           {isModified && showComparison && (
                             <span className="original-value">(was {originalVal.toFixed(1)})</span>
                           )}
@@ -1507,6 +1659,7 @@ export default function App() {
                           step={step}
                           value={clamped}
                           onChange={(e) => onWhatIfChange(f, parseFloat(e.target.value))}
+                          disabled={deciding}
                         />
                       </div>
                     )
@@ -1518,10 +1671,10 @@ export default function App() {
                   </p>
                 )}
                 <div className="whatif-actions">
-                  <button type="button" className="whatif-apply" onClick={onApplyWhatIf} disabled={!whatIfRow}>
+                  <button type="button" className="whatif-apply" onClick={onApplyWhatIf} disabled={!whatIfRow || deciding}>
                     Update Decision
                   </button>
-                  <button type="button" className="whatif-reset" onClick={onResetToBaseline} disabled={!whatIfRow}>
+                  <button type="button" className="whatif-reset" onClick={onResetToBaseline} disabled={!whatIfRow || deciding}>
                     Reset to Original
                   </button>
                 </div>

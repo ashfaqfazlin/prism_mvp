@@ -12,7 +12,7 @@
       "features": 15,
       "target": "A16",
       "model_compatible": true,
-      "featured": true,
+      "featured": false,
       "accuracy": 0.89,
       "icon": "credit-card"
     },
@@ -156,7 +156,7 @@
       "features": 85,
       "target": "target",
       "model_compatible": true,
-      "featured": true,
+      "featured": false,
       "accuracy": 0.94,
       "icon": "shield"
     },

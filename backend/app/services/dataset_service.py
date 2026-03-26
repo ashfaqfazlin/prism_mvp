@@ -91,40 +91,50 @@ class DatasetService:
         filepath = self._datasets_dir / info["filename"]
         if not filepath.exists():
             raise FileNotFoundError(f"Dataset file not found: {info['filename']}")
-        
-        df = pd.read_csv(filepath)
-        
-        # Get all columns for display
-        columns = df.columns.tolist()
-        
-        # Sample rows
-        sample_df = df.head(limit)
-        rows = sample_df.to_dict(orient="records")
-        
-        # Compute numeric ranges for sliders (with labels from domain config)
+        # Performance: avoid loading full datasets for slider ranges and summary.
+        # We sample a bounded number of rows so dataset load stays responsive.
+        RANGE_SAMPLE_LIMIT = 1000
+
         domain = get_domain(dataset_id)
-        numeric_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
-        
-        # If domain exists, prioritize its numeric_cols to ensure correct feature order
+        total_rows = info.get("rows")
+        try:
+            total_rows_int = int(total_rows) if total_rows is not None else None
+        except Exception:
+            total_rows_int = None
+
+        # Read only what we need:
+        # - sample_df: displayed rows
+        # - ranges_df: numeric min/max/mean for sliders (approximate, sampled)
+        sample_df = pd.read_csv(filepath, nrows=limit)
+        columns = sample_df.columns.tolist()
+        rows = sample_df.to_dict(orient="records")
+
+        range_sample_size = RANGE_SAMPLE_LIMIT
+        if total_rows_int is not None:
+            range_sample_size = min(range_sample_size, total_rows_int)
+        ranges_df = pd.read_csv(filepath, nrows=range_sample_size)
+
+        # Compute numeric ranges for sliders (with labels from domain config)
         if domain and domain.numeric_cols:
-            # Filter to only columns that exist and are numeric
-            numeric_cols = [c for c in domain.numeric_cols if c in df.columns]
-        
-        ranges = {}
+            numeric_cols = [c for c in domain.numeric_cols if c in ranges_df.columns]
+        else:
+            numeric_cols = ranges_df.select_dtypes(include=["int64", "float64"]).columns.tolist()
+
+        ranges: dict[str, Any] = {}
         for col in numeric_cols:
             label = col.replace("_", " ").title()
             if domain and domain.feature_labels:
                 label = domain.feature_labels.get(col, label)
-            vals = pd.to_numeric(df[col], errors="coerce").dropna()
-            if len(vals) == 0:
+            vals = pd.to_numeric(ranges_df[col], errors="coerce").dropna()
+            if vals.empty:
                 continue
             ranges[col] = {
                 "min": float(vals.min()),
                 "max": float(vals.max()),
                 "mean": float(vals.mean()),
-                "label": label
+                "label": label,
             }
-        
+
         # Enhanced info with domain labels
         enhanced_info = {**info}
         if domain:
@@ -132,14 +142,14 @@ class DatasetService:
             enhanced_info["negative_label"] = domain.negative_label
             enhanced_info["feature_labels"] = domain.feature_labels
 
-        # Dataset summary: class balance (if target column exists)
+        # Dataset summary: approximate class balance (if target column exists) using sampled rows
         summary: dict[str, Any] = {
-            "row_count": len(df),
+            "row_count": total_rows_int if total_rows_int is not None else int(sample_df.shape[0]),
             "feature_count": len(columns),
         }
         target_col = info.get("target") or (domain.target_col if domain else None)
-        if target_col and target_col in df.columns:
-            value_counts = df[target_col].value_counts()
+        if target_col and target_col in ranges_df.columns:
+            value_counts = ranges_df[target_col].value_counts()
             summary["class_balance"] = {str(k): int(v) for k, v in value_counts.items()}
             summary["target_column"] = target_col
             if domain:
@@ -156,7 +166,7 @@ class DatasetService:
             "info": enhanced_info,
             "columns": columns,
             "rows": rows,
-            "row_count": len(df),
+            "row_count": total_rows_int if total_rows_int is not None else int(sample_df.shape[0]),
             "feature_ranges": ranges,
             "model_compatible": info.get("model_compatible", False),
             "summary": summary,

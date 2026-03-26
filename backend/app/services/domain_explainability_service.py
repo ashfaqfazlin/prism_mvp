@@ -19,6 +19,9 @@ class DomainExplainabilityService:
         # Cache explainers by domain_id
         self._explainers: dict[str, shap.TreeExplainer] = {}
         self._current_domain_id: str | None = None
+        # Cache global feature importance results to avoid recomputation
+        # Keyed by (domain_id, sample_size)
+        self._global_importance_cache: dict[tuple[str, int], dict[str, Any]] = {}
 
     def _get_or_build_explainer(self, domain_id: str) -> shap.TreeExplainer | None:
         """Get cached explainer or build new one."""
@@ -149,6 +152,10 @@ class DomainExplainabilityService:
 
     def global_feature_importance(self, domain_id: str, sample_size: int = 50) -> dict[str, Any]:
         """Compute mean absolute SHAP across a sample of rows for dataset-level explainability."""
+        cache_key = (domain_id, int(sample_size))
+        if cache_key in self._global_importance_cache:
+            return self._global_importance_cache[cache_key]
+
         domain_model_service.ensure_loaded(domain_id)
         domain = domain_model_service.current_domain
         if domain is None:
@@ -172,39 +179,74 @@ class DomainExplainabilityService:
         if not filename or not (datasets_dir / filename).exists():
             return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
 
+        def _decode_shap_feature_name(encoded_name: str) -> str:
+            # Mirrors the decoding logic used elsewhere in the project (remove encoding prefixes)
+            if encoded_name.startswith("num__"):
+                return encoded_name[5:]
+            if encoded_name.startswith("cat__"):
+                rest = encoded_name[5:]
+                # E.g. "checking_status_A11" -> "checking_status"
+                parts = rest.rsplit("_", 1)
+                return parts[0] if len(parts) == 2 else rest
+            return encoded_name
+
         try:
-            df = pd.read_csv(datasets_dir / filename)
+            # Read only a bounded sample to keep this endpoint responsive.
+            n = max(1, int(sample_size))
+            df = pd.read_csv(datasets_dir / filename, nrows=n)
             feature_cols = [c for c in domain.feature_cols if c in df.columns]
             df = df[feature_cols].replace("?", np.nan)
             for c in domain.numeric_cols:
                 if c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors="coerce")
-            X = domain_model_service._preproc.transform(df.head(sample_size))
+            X = domain_model_service._preproc.transform(df.head(n))
             feature_names = domain_model_service.feature_names
             explainer = self._get_or_build_explainer(domain_id)
             if explainer is None:
                 return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
 
-            vals_list = []
-            for i in range(min(sample_size, len(X))):
-                v = explainer.shap_values(X[i : i + 1])
-                if isinstance(v, list):
-                    v = v[1]
-                v = np.asarray(v)
-                if v.ndim == 2:
-                    v = v[0]
-                vals_list.append(np.abs(v))
-            mean_abs = np.mean(vals_list, axis=0)
-            idx = np.argsort(mean_abs)[::-1][:20]
-            return {
-                "feature_names": [feature_names[j] for j in idx],
-                "mean_abs_shap": [float(mean_abs[j]) for j in idx],
+            # Compute SHAP for the whole sample at once (more efficient than per-row loops).
+            shap_vals = explainer.shap_values(X)
+            if isinstance(shap_vals, list):
+                shap_vals = shap_vals[1]  # class 1
+            shap_vals = np.asarray(shap_vals)
+            # Ensure shape is (n_samples, n_features)
+            if shap_vals.ndim == 3:
+                # Common patterns:
+                # - (n_samples, n_classes, n_features)
+                # - (n_classes, n_samples, n_features)
+                if shap_vals.shape[1] in (1, 2):
+                    shap_vals = shap_vals[:, 1, :] if shap_vals.shape[1] > 1 else shap_vals[:, 0, :]
+                else:
+                    shap_vals = shap_vals[0]
+            if shap_vals.ndim == 1:
+                shap_vals = shap_vals.reshape(1, -1)
+
+            mean_abs_encoded = np.mean(np.abs(shap_vals), axis=0)
+
+            # Aggregate encoded-feature importances back to original (human) feature names.
+            # This avoids showing "num__/cat__" tokens in the UI.
+            agg: dict[str, float] = {}
+            for j, enc_name in enumerate(feature_names):
+                orig = _decode_shap_feature_name(str(enc_name))
+                agg[orig] = agg.get(orig, 0.0) + float(mean_abs_encoded[j])
+
+            sorted_orig = sorted(agg.items(), key=lambda kv: kv[1], reverse=True)
+            top = sorted_orig[:10]
+
+            result = {
+                "feature_names": [k for k, _ in top],
+                "mean_abs_shap": [v for _, v in top],
                 "feature_labels": domain.feature_labels or {},
-                "sample_size": len(vals_list),
+                "sample_size": int(min(n, len(X))),
             }
+            self._global_importance_cache[cache_key] = result
+            return result
         except Exception as e:
             print(f"Global SHAP failed for {domain_id}: {e}")
-            return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
+            result = {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
+            self._global_importance_cache[cache_key] = result
+            return result
 
     def clear_cache(self, domain_id: str | None = None) -> None:
         """Clear cached explainers."""

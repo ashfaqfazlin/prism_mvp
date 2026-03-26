@@ -592,39 +592,40 @@ def domain_decision_batch(domain_id: str, rows: list[dict[str, Any]]) -> dict[st
         domain_model_service.load_domain(domain_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load domain: {e}")
-    
-    predictions = []
-    
-    for i, row in enumerate(rows):
-        try:
-            df = pd.DataFrame([row])
-            X, df_clean, errs = domain_model_service.validate_and_transform(df)
-            
-            if X.size == 0:
-                predictions.append({
+
+    # Vectorised path: validate/transform once for all rows.
+    try:
+        df = pd.DataFrame(rows)
+        X, _, errs = domain_model_service.validate_and_transform(df)
+    except Exception as e:
+        X = []
+        errs = [str(e)]
+
+    predictions: list[dict[str, Any]] = []
+    if X is None or getattr(X, "size", 0) == 0:
+        err_msg = "; ".join(errs) or "Invalid input"
+        for i in range(len(rows)):
+            predictions.append(
+                {"index": i, "decision": None, "confidence": None, "error": err_msg}
+            )
+    else:
+        labels, probs = domain_model_service.predict(X)
+        pos_label = domain.positive_label
+        neg_label = domain.negative_label
+        # probs[:, 1] corresponds to class label == 1 (positive class during training)
+        for i in range(len(rows)):
+            lab = int(labels[i])
+            decision = pos_label if lab == 1 else neg_label
+            conf = float(probs[i, lab])
+            predictions.append(
+                {
                     "index": i,
-                    "decision": None,
-                    "confidence": None,
-                    "error": "; ".join(errs) or "Invalid input"
-                })
-                continue
-            
-            dec, conf, probs = domain_model_service.predict_single(X[0])
-            
-            predictions.append({
-                "index": i,
-                "decision": dec,
-                "confidence": conf,
-                "positive_label": domain.positive_label,
-                "negative_label": domain.negative_label,
-            })
-        except Exception as e:
-            predictions.append({
-                "index": i,
-                "decision": None,
-                "confidence": None,
-                "error": str(e)
-            })
+                    "decision": decision,
+                    "confidence": conf,
+                    "positive_label": pos_label,
+                    "negative_label": neg_label,
+                }
+            )
     
     return {
         "domain_id": domain_id,
@@ -722,54 +723,43 @@ def _domain_plain_language_explanations(
         # For positive decisions: show what helped first
         for f in positive_factors[:3]:
             impact = "strongly" if abs(f["shap_value"]) > 0.3 else "moderately" if abs(f["shap_value"]) > 0.1 else ""
-            if f["row_value"] not in (None, "", "nan"):
-                bullet = f"Your {f['label']} ({f['row_value']}) {impact} supported the {domain.positive_label.lower()} decision.".replace("  ", " ")
-            else:
-                bullet = f"Your {f['label']} {impact} supported the {domain.positive_label.lower()} decision.".replace("  ", " ")
+            # Keep this human-friendly: avoid raw numbers in the main bullet text.
+            bullet = f"Your {f['label']} {impact} supported the {domain.positive_label.lower()} decision.".replace("  ", " ")
             bullets.append(bullet)
             summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "positive", "value": f["shap_value"]})
         
         # Then show minor negative factors
         for f in negative_factors[:2]:
-            if f["row_value"] not in (None, "", "nan"):
-                bullet = f"Your {f['label']} ({f['row_value']}) slightly reduced confidence."
-            else:
-                bullet = f"Your {f['label']} slightly reduced confidence."
+            bullet = f"Your {f['label']} slightly reduced confidence."
             bullets.append(bullet)
             summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "negative", "value": f["shap_value"]})
         
         # Directional reasoning for positive decision
         if positive_factors:
             top_factor = positive_factors[0]["label"]
-            directional = f"The decision engine predicts {domain.positive_label}. Key factors like {top_factor} contributed positively to this outcome."
+            directional = f"PRISM expects a {domain.positive_label} outcome, mainly because factors like {top_factor} support it."
         else:
-            directional = f"The decision engine predicts {domain.positive_label} based on the overall profile assessment."
+            directional = f"PRISM expects a {domain.positive_label} outcome based on the overall pattern in the data."
     else:
         # For negative decisions: show what hurt first
         for f in negative_factors[:3]:
             impact = "significantly" if abs(f["shap_value"]) > 0.5 else "moderately" if abs(f["shap_value"]) > 0.2 else ""
-            if f["row_value"] not in (None, "", "nan"):
-                bullet = f"Your {f['label']} ({f['row_value']}) {impact} contributed to the {domain.negative_label.lower()} prediction.".replace("  ", " ")
-            else:
-                bullet = f"Your {f['label']} {impact} contributed to the {domain.negative_label.lower()} prediction.".replace("  ", " ")
+            bullet = f"Your {f['label']} {impact} contributed to the {domain.negative_label.lower()} prediction.".replace("  ", " ")
             bullets.append(bullet)
             summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "negative", "value": f["shap_value"]})
         
         # Then show factors that were favorable
         for f in positive_factors[:2]:
-            if f["row_value"] not in (None, "", "nan"):
-                bullet = f"Your {f['label']} ({f['row_value']}) was favorable but not enough to change the outcome."
-            else:
-                bullet = f"Your {f['label']} was favorable but not enough to change the outcome."
+            bullet = f"Your {f['label']} was favorable but not enough to change the outcome."
             bullets.append(bullet)
             summary.append({"decision_factor": f["feature"], "label": f["label"], "direction": "positive", "value": f["shap_value"]})
         
         # Directional reasoning for negative decision
         if negative_factors:
             top_factor = negative_factors[0]["label"]
-            directional = f"The decision engine predicts {domain.negative_label}. Factors like {top_factor} weighed against a positive outcome."
+            directional = f"PRISM expects a {domain.negative_label} outcome, mainly because factors like {top_factor} weighed against it."
         else:
-            directional = f"The decision engine predicts {domain.negative_label} based on the overall risk assessment."
+            directional = f"PRISM expects a {domain.negative_label} outcome based on the overall pattern in the data."
     
     return {
         "bullets": bullets[:top_k],
@@ -935,7 +925,7 @@ def _domain_counterfactual_preview(
                         current_val = float(raw_value)
                         # Suggest improvement direction
                         out.append({
-                            "suggestion": f"Improving your {label} (currently {current_val:.1f}) could positively impact the outcome.",
+                            "suggestion": f"Improving your {label} could positively impact the outcome.",
                             "decision_factor": orig_feature,
                             "label": label,
                             "current_value": current_val,
@@ -987,7 +977,7 @@ def _domain_counterfactual_preview(
             
             if raw_value not in (None, "", "nan"):
                 out.append({
-                    "suggestion": f"Your {label} ({raw_value}) is favorable — significant changes here could affect the outcome.",
+                    "suggestion": f"Your {label} is favorable — significant changes here could affect the outcome.",
                     "decision_factor": orig_feature,
                     "label": label,
                     "current_value": raw_value,
