@@ -45,6 +45,7 @@ export default function App() {
   const [globalExplainability, setGlobalExplainability] = useState(null) // { feature_names, mean_abs_shap, feature_labels }
   const [globalExplainabilityLoading, setGlobalExplainabilityLoading] = useState(false)
   const [showGlobalExplainability, setShowGlobalExplainability] = useState(false)
+  const [showDecisionDetails, setShowDecisionDetails] = useState(false)
   const [compareIndex, setCompareIndex] = useState(null) // Second row for compare mode (null = single view)
   const [resultB, setResultB] = useState(null)
   const [decidingB, setDecidingB] = useState(false)
@@ -440,6 +441,7 @@ export default function App() {
     }
     if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
     setExplanationMode('plain')
+    setShowDecisionDetails(false)
     setSelectedIndex(index)
     setResult(null)
     setWhatIfRow(null)
@@ -468,6 +470,7 @@ export default function App() {
     const row = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
     if (!row) return
     if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
+    setShowDecisionDetails(false)
     setResult(null)
     // Run decision but preserve baseline for comparison
     await runDecision(row, true)
@@ -478,6 +481,7 @@ export default function App() {
     setWhatIfRow(null)
     if (baselineResult) setResult(baselineResult)
     setExplanationMode('plain')
+    setShowDecisionDetails(false)
   }
 
   // Apply a counterfactual suggestion to What-If sliders and run decision
@@ -494,6 +498,7 @@ export default function App() {
     setWhatIfRow(next)
     setExplanationMode('whatif')
     if (whatIfDebounceRef.current) clearTimeout(whatIfDebounceRef.current)
+    setShowDecisionDetails(false)
     setTimeout(() => runDecision(next, true), 120)
   }
 
@@ -582,6 +587,13 @@ export default function App() {
 
   const activeRow = whatIfRow ?? (selectedIndex != null ? rows[selectedIndex] : null)
   const trustCal = result?.trust_calibration
+  const trustAccuracyLabel = (() => {
+    const acc = trustCal?.historical_accuracy
+    if (acc == null) return null
+    if (acc >= 0.85) return 'High'
+    if (acc >= 0.75) return 'Medium'
+    return 'Low'
+  })()
 
   // Persist theme and apply class
   useEffect(() => {
@@ -1026,6 +1038,7 @@ export default function App() {
                     <p className="muted">
                       These are the factors that tend to matter most across many rows in this dataset.
                       It is a general overview, not an explanation for the exact row you selected.
+                      This does not explain your exact row; it's a general overview from many rows.
                     </p>
                     <button type="button" className="btn secondary" onClick={onShowGlobalExplainability}>
                       Show overall factors
@@ -1041,6 +1054,9 @@ export default function App() {
                   <>
                     <h4>Overall factors PRISM looks at</h4>
                     <p className="muted">Top factors ranked by overall influence (global SHAP).</p>
+                    <p className="muted" style={{ marginTop: 'var(--space-xs)' }}>
+                      This does not explain your exact row; it's a general overview from many rows.
+                    </p>
                     <div className="global-shap-bars">
                       {globalExplainability.feature_names.slice(0, 8).map((name, i) => {
                         const label = globalExplainability.feature_labels?.[name] || name
@@ -1353,7 +1369,13 @@ export default function App() {
                         <span className={`decision-badge ${(result.decision?.decision === result.decision?.positive_label || result.decision?.decision === '+') ? 'positive' : 'negative'}`}>
                           {result.decision?.decision === '+' ? (activeDataset?.positiveLabel || 'Approved') : result.decision?.decision === '-' ? (activeDataset?.negativeLabel || 'Rejected') : result.decision?.decision}
                         </span>
-                        <strong className="confidence-value">{((result.decision?.confidence ?? 0) * 100).toFixed(1)}%</strong>
+                        <strong className="confidence-value">
+                          {result.uncertainty?.confidence_band === 'high'
+                            ? 'High'
+                            : result.uncertainty?.confidence_band === 'low'
+                              ? 'Low'
+                              : 'Medium'}
+                        </strong>
                       </div>
                     </div>
                   </div>
@@ -1375,7 +1397,13 @@ export default function App() {
                             <span className={`decision-badge ${(resultB.decision?.decision === resultB.decision?.positive_label || resultB.decision?.decision === '+') ? 'positive' : 'negative'}`}>
                               {resultB.decision?.decision === '+' ? (activeDataset?.positiveLabel || 'Approved') : resultB.decision?.decision === '-' ? (activeDataset?.negativeLabel || 'Rejected') : resultB.decision?.decision}
                             </span>
-                            <strong className="confidence-value">{((resultB.decision?.confidence ?? 0) * 100).toFixed(1)}%</strong>
+                            <strong className="confidence-value">
+                              {resultB.uncertainty?.confidence_band === 'high'
+                                ? 'High'
+                                : resultB.uncertainty?.confidence_band === 'low'
+                                  ? 'Low'
+                                  : 'Medium'}
+                            </strong>
                           </div>
                         </div>
                       </div>
@@ -1404,14 +1432,19 @@ export default function App() {
                   {result.explanation_fidelity && (
                     <span
                       className={`fidelity-badge ${result.explanation_fidelity.prediction_match ? 'high' : 'low'}`}
-                      title={result.explanation_fidelity.prediction_match ? 'Explanation matches model decision (high fidelity)' : 'Explanation may not fully match model (check technical view)'}
+                      title={
+                        result.explanation_fidelity.prediction_match
+                          ? 'Explanation quality is consistent with the model decision.'
+                          : 'Explanation quality may vary; use What-if to explore changes.'
+                      }
                     >
-                      Explanation: {result.explanation_fidelity.prediction_match ? 'High confidence' : 'Lower confidence'}
+                      Explanation quality:{' '}
+                      {result.explanation_fidelity.prediction_match ? 'High' : 'May need checking'}
                     </span>
                   )}
                   {trustCal && (
-                    <span className="model-accuracy" title="Historical model accuracy">
-                      Model accuracy: {((trustCal.historical_accuracy || 0) * 100).toFixed(0)}%
+                    <span className="model-accuracy" title="Historical model accuracy (approx.)">
+                      Model accuracy: {trustAccuracyLabel || 'Unknown'}
                     </span>
                   )}
                 </div>
@@ -1427,6 +1460,8 @@ export default function App() {
                 const posProb = probs[posLabel] ?? probs['+'] ?? 0
                 const negProb = probs[negLabel] ?? probs['-'] ?? 0
                 const confBand = result.uncertainty?.confidence_band || 'medium'
+                const confLabel = confBand === 'high' ? 'High' : confBand === 'low' ? 'Low' : 'Medium'
+                const confPercent = (dec.confidence ?? 0) * 100
                 
                 return (
                   <div className="decision-content">
@@ -1437,20 +1472,32 @@ export default function App() {
                       <div className="confidence-meter">
                         <div className="confidence-label">
                           <span>Confidence</span>
-                          <strong className={`confidence-value band-${confBand}`}>{((dec.confidence ?? 0) * 100).toFixed(1)}%</strong>
+                          <strong className={`confidence-value band-${confBand}`}>{confLabel}</strong>
                         </div>
                         <div className="confidence-bar-bg">
                           <div 
                             className={`confidence-bar-fill band-${confBand}`} 
-                            style={{ width: `${(dec.confidence ?? 0) * 100}%` }}
+                            style={{ width: `${confPercent}%` }}
                           />
                         </div>
                       </div>
                     </div>
-                    <div className="probability-breakdown">
-                      <span className="prob-item positive">P({posLabel}): {(posProb * 100).toFixed(1)}%</span>
-                      <span className="prob-item negative">P({negLabel}): {(negProb * 100).toFixed(1)}%</span>
+                    <div className="decision-more-details">
+                      <button
+                        type="button"
+                        className="btn secondary"
+                        onClick={() => setShowDecisionDetails((s) => !s)}
+                        aria-expanded={showDecisionDetails}
+                      >
+                        {showDecisionDetails ? 'Hide details' : 'More details'}
+                      </button>
                     </div>
+                    {showDecisionDetails && (
+                      <div className="probability-breakdown" aria-label="Probability breakdown">
+                        <span className="prob-item positive">P({posLabel}): {(posProb * 100).toFixed(1)}%</span>
+                        <span className="prob-item negative">P({negLabel}): {(negProb * 100).toFixed(1)}%</span>
+                      </div>
+                    )}
                     {/* Stability warning inline */}
                     {result.uncertainty?.warning && (
                       <div className="stability-warning">
@@ -1458,13 +1505,22 @@ export default function App() {
                         <span>{result.uncertainty.warning}</span>
                       </div>
                     )}
+                    {(result.explanation_fidelity && !result.explanation_fidelity.prediction_match) || result.uncertainty?.volatility_note ? (
+                      <div className="limitations-callout" role="note" aria-label="Limitations">
+                        <h4>Limitations</h4>
+                        <p className="muted">
+                          PRISM is decision-support. Explanations can be less reliable near the decision boundary.
+                          {result.uncertainty?.volatility_note ? ` ${result.uncertainty.volatility_note}` : ''}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 )
               })()}
             </div>
 
             {/* Plain language explanation */}
-            {(explanationMode === 'plain' || explanationMode === 'whatif') && result.explanation_layer && (
+            {explanationMode === 'plain' && result.explanation_layer && (
               <div className="explanation-layer-card">
                 <h3>In plain words</h3>
                 <p className="muted">
@@ -1480,7 +1536,10 @@ export default function App() {
             {/* Counterfactual preview */}
             {result.counterfactual_preview?.length > 0 && explanationMode === 'plain' && (
               <div className="counterfactual-preview-card">
-                <h3>What Could Change the Outcome?</h3>
+                <h3>Suggested changes</h3>
+                <p className="muted">
+                  These are suggestions for what you could adjust in a What-if scenario to explore how the decision might change.
+                </p>
                 <ul>
                   {result.counterfactual_preview.map((p, i) => (
                     <li key={i}>
