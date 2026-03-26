@@ -1,4 +1,8 @@
-"""API routes for PRISM."""
+"""API routes for PRISM.
+
+Organised by concern (comments below). Metadata and a SHAP guide for clients live in
+``app.api.meta`` (``GET /api/meta``) to keep this file focused on handlers.
+"""
 from __future__ import annotations
 
 import io
@@ -11,6 +15,7 @@ from typing import Any
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from app.config import settings
 from app.models import (
@@ -32,9 +37,12 @@ from app.services import (
     plain_language_explanations,
     uncertainty_stability,
 )
+from app.services.auto_schema_service import auto_schema_service
+from app.services.auto_trainer_service import auto_trainer_service
 from app.services.dataset_service import dataset_service
-from app.services.domain_model_service import domain_model_service
 from app.services.domain_explainability_service import domain_explainability_service
+from app.services.domain_model_service import domain_model_service
+from app.services.dynamic_domain_service import dynamic_domain_service
 from app.domain_config import get_domain, is_model_trained, list_domains
 
 router = APIRouter(prefix="/api", tags=["prism"])
@@ -55,7 +63,13 @@ def _audit(event: str, payload: dict[str, Any] | None = None) -> None:
 
 @router.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "app": "PRISM"}
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "version": "0.1.0",
+        "docs": "/docs",
+        "meta": "/api/meta",
+    }
 
 
 @router.get("/decision-factor-ranges")
@@ -215,11 +229,6 @@ def clear_recent_uploads() -> dict[str, str]:
 
 
 # ============== UPLOAD TRAINING ROUTES ==============
-
-from app.services.auto_schema_service import auto_schema_service
-from app.services.dynamic_domain_service import dynamic_domain_service
-from app.services.auto_trainer_service import auto_trainer_service
-from pydantic import BaseModel, Field
 
 
 class UploadConfigureRequest(BaseModel):
