@@ -16,7 +16,7 @@
 
 ## 2. First deploy
 
-- Let both services deploy. The **backend** will get a URL like `https://prism-api.onrender.com`. The **frontend** will get a URL like `https://prism.onrender.com` (or similar).
+- Let both services deploy. The **backend** will get a URL like `https://prism-api-xxxx.onrender.com` (suffix varies). The **frontend** will get a URL like `https://prism.onrender.com` (or similar).
 
 ## 3. Set environment variables
 
@@ -28,7 +28,7 @@ No CORS-related variables are required: the API allows browser requests from any
 
 1. Open the **prism** service → **Environment**.
 2. Add or edit:
-   - **VITE_API_BASE_URL** = your backend URL (no trailing slash), e.g. `https://prism-api.onrender.com`
+   - **VITE_API_BASE_URL** = your backend URL (no trailing slash), e.g. `https://prism-api-nrn1.onrender.com` (copy the exact URL from the **prism-api** service page in Render)
 3. Save. Render will redeploy the frontend (the new build will use this URL for API calls).
 
 ## 4. Verify

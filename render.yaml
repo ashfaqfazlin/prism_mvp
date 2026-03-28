@@ -26,5 +26,5 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_BASE_URL
-        value: https://prism-api.onrender.com
-        # If your backend URL is different, change in Dashboard → prism → Environment, then redeploy (required so build picks it up).
+        value: https://prism-api-nrn1.onrender.com
+        # Must match your live backend URL from Render (e.g. prism-api-xxxx.onrender.com). Redeploy frontend after changing.
