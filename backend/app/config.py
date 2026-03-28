@@ -1,8 +1,7 @@
 """PRISM configuration."""
 from pathlib import Path
 
-from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -33,9 +32,10 @@ class Settings(BaseSettings):
     # Reproducibility (e.g. for model/training)
     random_seed: int = 42
     
-    model_config = ConfigDict(
+    model_config = SettingsConfigDict(
         env_prefix="PRISM_",
         env_file=".env",
+        env_ignore_empty=True,
     )
 
 
