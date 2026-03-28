@@ -2,10 +2,10 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router
 from app.config import settings
+from app.cors_middleware import AllowAnyOriginCorsMiddleware
 
 
 @asynccontextmanager
@@ -27,13 +27,6 @@ app = FastAPI(
         "displayRequestDuration": False,
     },
 )
-# allow_origins=["*"] requires allow_credentials=False (browser CORS spec).
-# Frontend uses default fetch (no credentials) to the API.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ASGI middleware: short-circuit OPTIONS + Access-Control-Allow-Origin on all responses.
+app.add_middleware(AllowAnyOriginCorsMiddleware)
 app.include_router(router)

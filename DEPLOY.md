@@ -49,7 +49,10 @@ No CORS-related variables are required: the API allows browser requests from any
 3. **Check the backend**  
    In a new tab open `https://<your-prism-api-url>/api/health`. You should see `{"status":"ok","app":"PRISM"}`. If you get an error or it takes a long time, the backend may be starting up (free tier cold start ~30–60 s).
 
-4. **Browser console**  
+4. **“CORS” errors but the API is suspended**  
+   If the **prism-api** service is **suspended** in the Render dashboard, Render returns **503** HTML **without** CORS headers. The browser then reports *“blocked by CORS policy / no Access-Control-Allow-Origin”* even though the real problem is the service not running. **Resume** the web service, wait until it is **Live**, then reload `/api/health` until you get JSON.
+
+5. **Browser console**  
    Open DevTools (F12) → Console. If you see 404 on `/api/...`, the frontend was built without the correct **VITE_API_BASE_URL** — set it and redeploy the frontend (step 3).
 
 ## Notes
