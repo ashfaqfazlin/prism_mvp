@@ -27,11 +27,12 @@ app = FastAPI(
         "displayRequestDuration": False,
     },
 )
-_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+# allow_origins=["*"] requires allow_credentials=False (browser CORS spec).
+# Frontend uses default fetch (no credentials) to the API.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

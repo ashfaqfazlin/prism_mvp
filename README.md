@@ -259,7 +259,7 @@ Key endpoints (see `/docs` on your API server for the full OpenAPI spec):
 
 ### CORS errors
 
-- The backend should allow requests from the frontend origin. Check `config.py` / CORS settings if you change ports.
+- The API uses open CORS (`Access-Control-Allow-Origin: *`). If you still see CORS issues, check for a proxy or browser extension blocking requests.
 
 ---
 

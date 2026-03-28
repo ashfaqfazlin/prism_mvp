@@ -24,10 +24,6 @@ class Settings(BaseSettings):
     # API
     max_upload_mb: int = 50
     max_records: int = 50_000
-    cors_origins: str = (
-        "http://localhost:5173,http://127.0.0.1:5173,"
-        "https://prism.ashfaqfazlin.com"
-    )
     
     # Reproducibility (e.g. for model/training)
     random_seed: int = 42

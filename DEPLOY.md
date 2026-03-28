@@ -22,10 +22,7 @@
 
 ### Backend (prism-api)
 
-1. Open the **prism-api** service → **Environment**.
-2. Add or edit:
-   - **PRISM_CORS_ORIGINS** = your frontend URL (no trailing slash), e.g. `https://prism.onrender.com`
-3. Save. Render will redeploy the backend.
+No CORS-related variables are required: the API allows browser requests from any origin.
 
 ### Frontend (prism)
 
@@ -46,7 +43,6 @@
 
 2. **URLs don't match the defaults**  
    If your services have different URLs (e.g. `https://prism-abc12.onrender.com`):
-   - In **prism-api** → Environment: set **PRISM_CORS_ORIGINS** to your **frontend** URL (exactly as in the address bar).
    - In **prism** → Environment: set **VITE_API_BASE_URL** to your **backend** URL (no trailing slash).
    - **Important:** After changing **VITE_API_BASE_URL**, go to **prism** → **Manual Deploy** and deploy again. The frontend only picks up this value at **build time**.
 
@@ -54,7 +50,7 @@
    In a new tab open `https://<your-prism-api-url>/api/health`. You should see `{"status":"ok","app":"PRISM"}`. If you get an error or it takes a long time, the backend may be starting up (free tier cold start ~30–60 s).
 
 4. **Browser console**  
-   Open DevTools (F12) → Console. If you see CORS errors, the frontend URL is not in **PRISM_CORS_ORIGINS**. If you see 404 on `/api/...`, the frontend was built without the correct **VITE_API_BASE_URL** — set it and redeploy the frontend (step 2).
+   Open DevTools (F12) → Console. If you see 404 on `/api/...`, the frontend was built without the correct **VITE_API_BASE_URL** — set it and redeploy the frontend (step 3).
 
 ## Notes
 

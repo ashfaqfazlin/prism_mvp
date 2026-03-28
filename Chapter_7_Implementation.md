@@ -42,7 +42,7 @@ The technology stack is summarised in the following table. The rest of this sect
 ### 7.2.3 Development Framework
 
 - **FastAPI**  
-  FastAPI was chosen as the backend framework (FastAPI, n.d.) because it offers automatic OpenAPI documentation, request/response validation via Pydantic, and asynchronous support, which helps meet the performance and maintainability requirements. It integrates cleanly with the existing Python service layer and allows clear separation between API routes and business logic (as in Chapter 6). CORS is configurable for the frontend origin (e.g. `http://localhost:5173` during development).
+  FastAPI was chosen as the backend framework (FastAPI, n.d.) because it offers automatic OpenAPI documentation, request/response validation via Pydantic, and asynchronous support, which helps meet the performance and maintainability requirements. It integrates cleanly with the existing Python service layer and allows clear separation between API routes and business logic (as in Chapter 6). CORS is configured to allow any origin so the frontend can be hosted on arbitrary domains without per-origin configuration.
 
 - **React**  
   React was selected for the frontend (React, n.d.) because it allows a modular, component-based UI that maps to the design’s presentation tier. The single-page application (SPA) structure keeps the user in one context (dataset, row, decision, explanations) and supports the three explanation modes (plain language, technical SHAP, what-if) and export without navigating away. This aligns with the usability and human-centred design goals.
@@ -251,7 +251,7 @@ This section documents obstacles encountered during implementation and how they 
 ### 7.5.5 CORS and Frontend–Backend Connection
 
 - **Challenge:** During development, the frontend (e.g. `localhost:5173`) and backend (e.g. `localhost:8000`) run on different origins. Browsers block cross-origin requests unless CORS headers allow it, which could prevent the UI from receiving API responses.
-- **Solution:** The backend was configured with CORS middleware (FastAPI `CORSMiddleware`) allowing the frontend origins (e.g. `http://localhost:5173`, `http://127.0.0.1:5173`). In development, the Vite proxy was also used so that the frontend can call `/api` on the same origin and Vite forwards to the backend. For production, the deployed backend must list the deployed frontend origin in `cors_origins` (or equivalent config).
+- **Solution:** The backend was configured with CORS middleware (FastAPI `CORSMiddleware`) with `allow_origins=["*"]` and `allow_credentials=False`, so any frontend origin can call the API without maintaining an allowlist. In development, the Vite proxy was also used so that the frontend can call `/api` on the same origin and Vite forwards to the backend.
 
 ### 7.5.6 Upload Validation and Row Limits
 
