@@ -155,5 +155,154 @@
     "YearsSinceLastPromotion": "Years Since Last Promotion",
     "YearsWithCurrManager": "Years With Current Manager"
   },
-  "test_accuracy": 0.8639455782312925
+  "test_accuracy": 0.8639455782312925,
+  "precision": 0.7058823529411765,
+  "recall": 0.2553191489361702,
+  "f1": 0.375,
+  "brier_score": 0.10708081722259521,
+  "roc_auc": 0.8088551985528469,
+  "calibration": {
+    "bins": [
+      {
+        "bin": 0,
+        "lower": 0.0,
+        "upper": 0.1,
+        "count": 194,
+        "mean_confidence": 0.038073109605676045,
+        "empirical_accuracy": 0.061855670103092786
+      },
+      {
+        "bin": 1,
+        "lower": 0.1,
+        "upper": 0.2,
+        "count": 39,
+        "mean_confidence": 0.1368442775729375,
+        "empirical_accuracy": 0.20512820512820512
+      },
+      {
+        "bin": 2,
+        "lower": 0.2,
+        "upper": 0.30000000000000004,
+        "count": 22,
+        "mean_confidence": 0.24386788295073944,
+        "empirical_accuracy": 0.4090909090909091
+      },
+      {
+        "bin": 3,
+        "lower": 0.30000000000000004,
+        "upper": 0.4,
+        "count": 16,
+        "mean_confidence": 0.3484217170625925,
+        "empirical_accuracy": 0.1875
+      },
+      {
+        "bin": 4,
+        "lower": 0.4,
+        "upper": 0.5,
+        "count": 6,
+        "mean_confidence": 0.4495755930741628,
+        "empirical_accuracy": 0.5
+      },
+      {
+        "bin": 5,
+        "lower": 0.5,
+        "upper": 0.6000000000000001,
+        "count": 6,
+        "mean_confidence": 0.5172800223032633,
+        "empirical_accuracy": 0.6666666666666666
+      },
+      {
+        "bin": 6,
+        "lower": 0.6000000000000001,
+        "upper": 0.7000000000000001,
+        "count": 5,
+        "mean_confidence": 0.6349375367164611,
+        "empirical_accuracy": 0.6
+      },
+      {
+        "bin": 8,
+        "lower": 0.8,
+        "upper": 0.9,
+        "count": 3,
+        "mean_confidence": 0.8761963049570719,
+        "empirical_accuracy": 0.6666666666666666
+      },
+      {
+        "bin": 9,
+        "lower": 0.9,
+        "upper": 1.0,
+        "count": 3,
+        "mean_confidence": 0.9610498746236166,
+        "empirical_accuracy": 1.0
+      }
+    ],
+    "ece": 0.053080058644753784
+  },
+  "fairness": {
+    "sensitive_features": [
+      "Gender",
+      "MaritalStatus"
+    ],
+    "groups": {
+      "Gender": {
+        "rows": [
+          {
+            "group": "Female",
+            "count": 116,
+            "positive_rate": 0.06896551724137931,
+            "accuracy": 0.8793103448275862,
+            "tpr": 0.3125,
+            "fpr": 0.03
+          },
+          {
+            "group": "Male",
+            "count": 178,
+            "positive_rate": 0.05056179775280899,
+            "accuracy": 0.8539325842696629,
+            "tpr": 0.22580645161290322,
+            "fpr": 0.013605442176870748
+          }
+        ],
+        "demographic_parity_gap": 0.018403719488570322,
+        "tpr_gap": 0.08669354838709678
+      },
+      "MaritalStatus": {
+        "rows": [
+          {
+            "group": "Divorced",
+            "count": 64,
+            "positive_rate": 0.015625,
+            "accuracy": 0.921875,
+            "tpr": 0.0,
+            "fpr": 0.016666666666666666
+          },
+          {
+            "group": "Married",
+            "count": 133,
+            "positive_rate": 0.03759398496240601,
+            "accuracy": 0.8721804511278195,
+            "tpr": 0.16666666666666666,
+            "fpr": 0.017391304347826087
+          },
+          {
+            "group": "Single",
+            "count": 97,
+            "positive_rate": 0.1134020618556701,
+            "accuracy": 0.8144329896907216,
+            "tpr": 0.36,
+            "fpr": 0.027777777777777776
+          }
+        ],
+        "demographic_parity_gap": 0.0977770618556701,
+        "tpr_gap": 0.36
+      }
+    },
+    "notes": [
+      "Fairness diagnostics are descriptive and should be interpreted with domain context."
+    ]
+  },
+  "sensitive_features": [
+    "Gender",
+    "MaritalStatus"
+  ]
 }

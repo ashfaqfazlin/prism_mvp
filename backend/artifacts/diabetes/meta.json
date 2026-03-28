@@ -45,5 +45,103 @@
     "diabetes_pedigree": "Diabetes Pedigree Function",
     "age": "Age"
   },
-  "test_accuracy": 0.7467532467532467
+  "test_accuracy": 0.7467532467532467,
+  "precision": 0.6415094339622641,
+  "recall": 0.6296296296296297,
+  "f1": 0.6355140186915887,
+  "brier_score": 0.16845297813415527,
+  "roc_auc": 0.8275925925925927,
+  "calibration": {
+    "bins": [
+      {
+        "bin": 0,
+        "lower": 0.0,
+        "upper": 0.1,
+        "count": 59,
+        "mean_confidence": 0.034717480464585886,
+        "empirical_accuracy": 0.06779661016949153
+      },
+      {
+        "bin": 1,
+        "lower": 0.1,
+        "upper": 0.2,
+        "count": 16,
+        "mean_confidence": 0.14488162007182837,
+        "empirical_accuracy": 0.1875
+      },
+      {
+        "bin": 2,
+        "lower": 0.2,
+        "upper": 0.30000000000000004,
+        "count": 8,
+        "mean_confidence": 0.2515452690422535,
+        "empirical_accuracy": 0.75
+      },
+      {
+        "bin": 3,
+        "lower": 0.30000000000000004,
+        "upper": 0.4,
+        "count": 11,
+        "mean_confidence": 0.3602835536003113,
+        "empirical_accuracy": 0.45454545454545453
+      },
+      {
+        "bin": 4,
+        "lower": 0.4,
+        "upper": 0.5,
+        "count": 7,
+        "mean_confidence": 0.4314897911889212,
+        "empirical_accuracy": 0.2857142857142857
+      },
+      {
+        "bin": 5,
+        "lower": 0.5,
+        "upper": 0.6000000000000001,
+        "count": 12,
+        "mean_confidence": 0.5461047689119974,
+        "empirical_accuracy": 0.4166666666666667
+      },
+      {
+        "bin": 6,
+        "lower": 0.6000000000000001,
+        "upper": 0.7000000000000001,
+        "count": 8,
+        "mean_confidence": 0.6367451548576355,
+        "empirical_accuracy": 0.5
+      },
+      {
+        "bin": 7,
+        "lower": 0.7000000000000001,
+        "upper": 0.8,
+        "count": 8,
+        "mean_confidence": 0.7656286507844925,
+        "empirical_accuracy": 0.875
+      },
+      {
+        "bin": 8,
+        "lower": 0.8,
+        "upper": 0.9,
+        "count": 9,
+        "mean_confidence": 0.846353100405799,
+        "empirical_accuracy": 0.6666666666666666
+      },
+      {
+        "bin": 9,
+        "lower": 0.9,
+        "upper": 1.0,
+        "count": 16,
+        "mean_confidence": 0.9325171820819378,
+        "empirical_accuracy": 0.75
+      }
+    ],
+    "ece": 0.10868929937865902
+  },
+  "fairness": {
+    "sensitive_features": [],
+    "groups": {},
+    "notes": [
+      "No sensitive features configured for this domain."
+    ]
+  },
+  "sensitive_features": []
 }

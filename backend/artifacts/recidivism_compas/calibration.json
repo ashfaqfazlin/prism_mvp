@@ -1,0 +1,85 @@
+{
+  "bins": [
+    {
+      "bin": 0,
+      "lower": 0.0,
+      "upper": 0.1,
+      "count": 28,
+      "mean_confidence": 0.057288345215576034,
+      "empirical_accuracy": 0.21428571428571427
+    },
+    {
+      "bin": 1,
+      "lower": 0.1,
+      "upper": 0.2,
+      "count": 88,
+      "mean_confidence": 0.1572278274900534,
+      "empirical_accuracy": 0.20454545454545456
+    },
+    {
+      "bin": 2,
+      "lower": 0.2,
+      "upper": 0.30000000000000004,
+      "count": 355,
+      "mean_confidence": 0.2525773224696307,
+      "empirical_accuracy": 0.23661971830985915
+    },
+    {
+      "bin": 3,
+      "lower": 0.30000000000000004,
+      "upper": 0.4,
+      "count": 226,
+      "mean_confidence": 0.34656567884757455,
+      "empirical_accuracy": 0.3672566371681416
+    },
+    {
+      "bin": 4,
+      "lower": 0.4,
+      "upper": 0.5,
+      "count": 182,
+      "mean_confidence": 0.4450679357562746,
+      "empirical_accuracy": 0.4340659340659341
+    },
+    {
+      "bin": 5,
+      "lower": 0.5,
+      "upper": 0.6000000000000001,
+      "count": 185,
+      "mean_confidence": 0.5451471232079171,
+      "empirical_accuracy": 0.5297297297297298
+    },
+    {
+      "bin": 6,
+      "lower": 0.6000000000000001,
+      "upper": 0.7000000000000001,
+      "count": 174,
+      "mean_confidence": 0.6460855394259266,
+      "empirical_accuracy": 0.6954022988505747
+    },
+    {
+      "bin": 7,
+      "lower": 0.7000000000000001,
+      "upper": 0.8,
+      "count": 105,
+      "mean_confidence": 0.7563897348585583,
+      "empirical_accuracy": 0.7904761904761904
+    },
+    {
+      "bin": 8,
+      "lower": 0.8,
+      "upper": 0.9,
+      "count": 81,
+      "mean_confidence": 0.8425517089572954,
+      "empirical_accuracy": 0.7530864197530864
+    },
+    {
+      "bin": 9,
+      "lower": 0.9,
+      "upper": 1.0,
+      "count": 19,
+      "mean_confidence": 0.9312336005662617,
+      "empirical_accuracy": 0.8947368421052632
+    }
+  ],
+  "ece": 0.0303921597291427
+}

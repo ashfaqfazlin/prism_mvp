@@ -1,0 +1,134 @@
+{
+  "sensitive_features": [
+    "sex",
+    "education",
+    "marriage"
+  ],
+  "groups": {
+    "sex": {
+      "rows": [
+        {
+          "group": "1",
+          "count": 2402,
+          "positive_rate": 0.12822647793505412,
+          "accuracy": 0.8047460449625312,
+          "tpr": 0.35650623885918004,
+          "fpr": 0.05866376969038566
+        },
+        {
+          "group": "2",
+          "count": 3598,
+          "positive_rate": 0.11478599221789883,
+          "accuracy": 0.8274041133963312,
+          "tpr": 0.3642297650130548,
+          "fpr": 0.04731638418079096
+        }
+      ],
+      "demographic_parity_gap": 0.013440485717155295,
+      "tpr_gap": 0.007723526153874782
+    },
+    "education": {
+      "rows": [
+        {
+          "group": "0",
+          "count": 2,
+          "positive_rate": 0.0,
+          "accuracy": 1.0,
+          "tpr": 0.0,
+          "fpr": 0.0
+        },
+        {
+          "group": "1",
+          "count": 2130,
+          "positive_rate": 0.0835680751173709,
+          "accuracy": 0.8389671361502348,
+          "tpr": 0.2962962962962963,
+          "fpr": 0.0336231884057971
+        },
+        {
+          "group": "2",
+          "count": 2774,
+          "positive_rate": 0.14023071377072818,
+          "accuracy": 0.8136265320836338,
+          "tpr": 0.4024390243902439,
+          "fpr": 0.059017941454202076
+        },
+        {
+          "group": "3",
+          "count": 1014,
+          "positive_rate": 0.14792899408284024,
+          "accuracy": 0.7800788954635108,
+          "tpr": 0.36015325670498083,
+          "fpr": 0.07436918990703852
+        },
+        {
+          "group": "4",
+          "count": 26,
+          "positive_rate": 0.07692307692307693,
+          "accuracy": 0.9615384615384616,
+          "tpr": 1.0,
+          "fpr": 0.04
+        },
+        {
+          "group": "5",
+          "count": 45,
+          "positive_rate": 0.022222222222222223,
+          "accuracy": 0.9111111111111111,
+          "tpr": 0.0,
+          "fpr": 0.023809523809523808
+        },
+        {
+          "group": "6",
+          "count": 9,
+          "positive_rate": 0.1111111111111111,
+          "accuracy": 0.7777777777777778,
+          "tpr": 0.0,
+          "fpr": 0.125
+        }
+      ],
+      "demographic_parity_gap": 0.14792899408284024,
+      "tpr_gap": 1.0
+    },
+    "marriage": {
+      "rows": [
+        {
+          "group": "0",
+          "count": 7,
+          "positive_rate": 0.14285714285714285,
+          "accuracy": 0.8571428571428571,
+          "tpr": 0.0,
+          "fpr": 0.14285714285714285
+        },
+        {
+          "group": "1",
+          "count": 2767,
+          "positive_rate": 0.12540657752078063,
+          "accuracy": 0.8073726057101555,
+          "tpr": 0.36077844311377244,
+          "fpr": 0.0505002382086708
+        },
+        {
+          "group": "2",
+          "count": 3158,
+          "positive_rate": 0.11589613679544016,
+          "accuracy": 0.8274224192526916,
+          "tpr": 0.3616692426584235,
+          "fpr": 0.052568697729988054
+        },
+        {
+          "group": "3",
+          "count": 68,
+          "positive_rate": 0.10294117647058823,
+          "accuracy": 0.8382352941176471,
+          "tpr": 0.3333333333333333,
+          "fpr": 0.05357142857142857
+        }
+      ],
+      "demographic_parity_gap": 0.03991596638655462,
+      "tpr_gap": 0.3616692426584235
+    }
+  },
+  "notes": [
+    "Fairness diagnostics are descriptive and should be interpreted with domain context."
+  ]
+}

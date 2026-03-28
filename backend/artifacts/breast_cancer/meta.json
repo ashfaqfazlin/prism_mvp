@@ -133,5 +133,79 @@
     "symmetry_worst": "Worst Symmetry",
     "fractal_dimension_worst": "Worst Fractal Dimension"
   },
-  "test_accuracy": 0.9736842105263158
+  "test_accuracy": 0.9736842105263158,
+  "precision": 1.0,
+  "recall": 0.9285714285714286,
+  "f1": 0.9629629629629629,
+  "brier_score": 0.02436264604330063,
+  "roc_auc": 0.994047619047619,
+  "calibration": {
+    "bins": [
+      {
+        "bin": 0,
+        "lower": 0.0,
+        "upper": 0.1,
+        "count": 70,
+        "mean_confidence": 0.006898602416705606,
+        "empirical_accuracy": 0.014285714285714285
+      },
+      {
+        "bin": 1,
+        "lower": 0.1,
+        "upper": 0.2,
+        "count": 4,
+        "mean_confidence": 0.1454257071018219,
+        "empirical_accuracy": 0.25
+      },
+      {
+        "bin": 3,
+        "lower": 0.30000000000000004,
+        "upper": 0.4,
+        "count": 1,
+        "mean_confidence": 0.3764926493167877,
+        "empirical_accuracy": 1.0
+      },
+      {
+        "bin": 5,
+        "lower": 0.5,
+        "upper": 0.6000000000000001,
+        "count": 3,
+        "mean_confidence": 0.5691548585891724,
+        "empirical_accuracy": 1.0
+      },
+      {
+        "bin": 7,
+        "lower": 0.7000000000000001,
+        "upper": 0.8,
+        "count": 1,
+        "mean_confidence": 0.7853261828422546,
+        "empirical_accuracy": 1.0
+      },
+      {
+        "bin": 8,
+        "lower": 0.8,
+        "upper": 0.9,
+        "count": 1,
+        "mean_confidence": 0.8874529600143433,
+        "empirical_accuracy": 1.0
+      },
+      {
+        "bin": 9,
+        "lower": 0.9,
+        "upper": 1.0,
+        "count": 34,
+        "mean_confidence": 0.993204265832901,
+        "empirical_accuracy": 1.0
+      }
+    ],
+    "ece": 0.029909768387401607
+  },
+  "fairness": {
+    "sensitive_features": [],
+    "groups": {},
+    "notes": [
+      "No sensitive features configured for this domain."
+    ]
+  },
+  "sensitive_features": []
 }
