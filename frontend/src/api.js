@@ -13,7 +13,9 @@ async function req(path, opts = {}) {
     try {
       const j = JSON.parse(t);
       msg = j.detail || t;
-    } catch {}
+    } catch (e) {
+      void e;
+    }
     throw new Error(msg);
   }
   if (res.headers.get('content-type')?.includes('application/json')) return res.json();
@@ -48,6 +50,11 @@ export async function loadDataset(datasetId, limit = 80) {
 /** Get dataset-level (global) explainability: mean absolute SHAP across sample */
 export async function getGlobalExplainability(datasetId, sampleSize = 50) {
   return req(`/datasets/${datasetId}/global-explainability?sample_size=${sampleSize}`);
+}
+
+/** Get combined XAI diagnostics (calibration + fairness + limitations) for a domain. */
+export async function getDomainXaiProfile(domainId) {
+  return req(`/domains/${domainId}/xai-profile`);
 }
 
 /** Get list of recent user uploads */
@@ -153,7 +160,9 @@ export async function uploadCsv(file) {
     try {
       const j = JSON.parse(t);
       msg = Array.isArray(j.detail) ? j.detail.join('; ') : (j.detail || t);
-    } catch {}
+    } catch (e) {
+      void e;
+    }
     throw new Error(msg);
   }
   return res.json();

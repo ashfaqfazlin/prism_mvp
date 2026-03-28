@@ -29,6 +29,7 @@ from app.models import (
     UncertaintyResponse,
 )
 from app.services import (
+    build_explanation_taxonomy,
     counterfactual_preview,
     data_service,
     explainability_service,
@@ -559,7 +560,11 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
     # Trust calibration
     try:
         shap_vals = out["shap"].get("values", [])
-        trust_cal = _compute_trust_calibration(conf, shap_vals)
+        trust_cal = _compute_trust_calibration(
+            conf,
+            shap_vals,
+            calibration_data=domain_model_service.meta.get("calibration"),
+        )
         out["trust_calibration"] = trust_cal
     except Exception as e:
         out["trust_calibration"] = {
@@ -581,6 +586,10 @@ def domain_decision(domain_id: str, row: dict[str, Any]) -> dict[str, Any]:
         out["counterfactual_preview"] = []
     
     _audit("domain_decision", {"domain_id": domain_id, "decision": dec})
+    out["explanation_taxonomy"] = build_explanation_taxonomy(
+        has_true_counterfactuals=False,
+        has_suggested_changes=bool(out.get("counterfactual_preview")),
+    )
     return out
 
 
@@ -1132,6 +1141,10 @@ def decision(row: dict[str, Any]) -> dict[str, Any]:
         ).model_dump()
 
     out["explanation_fidelity"] = explanation_fidelity
+    out["explanation_taxonomy"] = build_explanation_taxonomy(
+        has_true_counterfactuals=bool(out.get("counterfactuals")),
+        has_suggested_changes=bool(out.get("counterfactual_preview")),
+    )
 
     _audit("decision", {"decision": dec})
     return out
@@ -1492,28 +1505,63 @@ def _export_pdf(data: dict[str, Any]) -> io.BytesIO:
     return buf
 
 
-def _compute_trust_calibration(confidence: float, shap_values: list[float]) -> dict[str, Any]:
-    """Compute trust calibration data for a decision."""
-    # Historical accuracy simulation based on confidence bands
-    # In a real system, this would come from a calibration dataset
-    if confidence >= 0.85:
-        historical_accuracy = 0.88  # High confidence = ~88% historical accuracy
-        calibration_warning = None
-    elif confidence >= 0.6:
-        historical_accuracy = 0.72  # Medium confidence = ~72% historical accuracy
-        calibration_warning = "This decision has moderate confidence. The model has been accurate about 72% of the time at this confidence level."
-    else:
-        historical_accuracy = 0.58  # Low confidence = ~58% historical accuracy
-        calibration_warning = "This decision has low confidence. Consider this assessment tentative — the model is accurate only about 58% of the time at this confidence level."
-    
+def _compute_trust_calibration(
+    confidence: float,
+    shap_values: list[float],
+    calibration_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compute trust calibration data for a decision.
+
+    Prefer empirical calibration bins from training artifacts when available.
+    Falls back to conservative heuristic bands if calibration is missing.
+    """
+    historical_accuracy: float | None = None
+    calibration_warning: str | None = None
+
+    bins = (calibration_data or {}).get("bins") if isinstance(calibration_data, dict) else None
+    if bins:
+        try:
+            nearest = min(
+                bins,
+                key=lambda b: abs(float(b.get("mean_confidence", 0.0)) - float(confidence)),
+            )
+            historical_accuracy = float(nearest.get("empirical_accuracy"))
+            if historical_accuracy < 0.65:
+                calibration_warning = (
+                    "This decision has low reliability for similar confidence levels. "
+                    "Treat as tentative and validate with additional context."
+                )
+            elif historical_accuracy < 0.8:
+                calibration_warning = (
+                    "This decision has moderate reliability for similar confidence levels."
+                )
+        except Exception:
+            historical_accuracy = None
+
+    if historical_accuracy is None:
+        # Fallback heuristic if empirical calibration is unavailable
+        if confidence >= 0.85:
+            historical_accuracy = 0.88
+            calibration_warning = None
+        elif confidence >= 0.6:
+            historical_accuracy = 0.72
+            calibration_warning = (
+                "This decision has moderate confidence. Interpret together with the explanation."
+            )
+        else:
+            historical_accuracy = 0.58
+            calibration_warning = (
+                "This decision has low confidence. Consider it tentative and explore What-if changes."
+            )
+
     # Complexity score based on number of significant SHAP values
     significant_features = sum(1 for v in shap_values if abs(v) > 0.1) if shap_values else 0
     complexity_score = min(1.0, significant_features / 10)
-    
+
     # Estimated read time based on complexity
     base_time = 15  # seconds
     estimated_read_time = int(base_time + (complexity_score * 45))
-    
+
     return {
         "model_confidence": confidence,
         "historical_accuracy": historical_accuracy,

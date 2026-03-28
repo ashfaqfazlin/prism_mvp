@@ -40,8 +40,14 @@ class DomainConfig:
     negative_value: Any = 0
     
     # Paths (relative to artifacts dir)
+    dataset_filename: str = ""
     model_filename: str = "model.joblib"
     preprocessing_filename: str = "preprocessing.joblib"
+    calibration_filename: str = "calibration.json"
+    fairness_filename: str = "fairness.json"
+
+    # Optional sensitive features for fairness diagnostics
+    sensitive_features: list[str] = field(default_factory=list)
     
     @property
     def model_path(self) -> Path:
@@ -54,6 +60,19 @@ class DomainConfig:
     @property
     def artifacts_dir(self) -> Path:
         return settings.artifacts_dir / self.id
+
+    @property
+    def dataset_path(self) -> Path:
+        filename = self.dataset_filename or f"{self.id}.csv"
+        return settings.base_dir / "datasets" / filename
+
+    @property
+    def calibration_path(self) -> Path:
+        return self.artifacts_dir / self.calibration_filename
+
+    @property
+    def fairness_path(self) -> Path:
+        return self.artifacts_dir / self.fairness_filename
 
 
 # ============== DOMAIN DEFINITIONS ==============
@@ -185,6 +204,7 @@ TAIWAN_CREDIT_CARD = DomainConfig(
     negative_label="No Default",
     positive_value=1,
     negative_value=0,
+    sensitive_features=["sex", "education", "marriage"],
 )
 
 
@@ -444,6 +464,7 @@ HR_ATTRITION = DomainConfig(
     negative_label="Will Stay",
     positive_value=1,
     negative_value=0,
+    sensitive_features=["Gender", "MaritalStatus"],
 )
 
 
@@ -612,6 +633,7 @@ RECIDIVISM_COMPAS = DomainConfig(
     negative_label="Won't Reoffend",
     positive_value=1,
     negative_value=0,
+    sensitive_features=["sex", "race"],
 )
 
 

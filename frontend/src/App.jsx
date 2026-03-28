@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
   getFeatureRanges,
   getMeta,
+  getDomainXaiProfile,
   uploadCsv,
   requestDecision,
   exportReport,
@@ -39,6 +40,13 @@ function decodeShapFeatureName(encoded) {
 
 function titleCaseWords(str) {
   return str.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function confidenceBandLabel(conf) {
+  const c = Number(conf ?? 0)
+  if (c >= 0.85) return 'High'
+  if (c >= 0.6) return 'Medium'
+  return 'Low'
 }
 
 const DEFAULT_SHAP_GUIDE = {
@@ -90,6 +98,7 @@ export default function App() {
   const [globalExplainability, setGlobalExplainability] = useState(null) // { feature_names, mean_abs_shap, feature_labels }
   const [globalExplainabilityLoading, setGlobalExplainabilityLoading] = useState(false)
   const [showGlobalExplainability, setShowGlobalExplainability] = useState(false)
+  const [xaiProfile, setXaiProfile] = useState(null)
   const [showDecisionDetails, setShowDecisionDetails] = useState(false)
   const [shapGuide, setShapGuide] = useState(null)
   const [showShapHelp, setShowShapHelp] = useState(true)
@@ -136,7 +145,9 @@ export default function App() {
     try {
       const r = await getFeatureRanges()
       if (r && Object.keys(r).length) setFeatureRanges(r)
-    } catch (_) {}
+    } catch (e) {
+      void e
+    }
   }, [])
 
   // Load dataset catalog and recent uploads
@@ -210,6 +221,7 @@ export default function App() {
     setGlobalExplainability(null)
     setShowGlobalExplainability(false)
     setGlobalExplainabilityLoading(false)
+    setXaiProfile(null)
     try {
       const result = await loadDataset(datasetId, 40)
       setColumns(result.columns || DEFAULT_FEATURE_COLS)
@@ -243,6 +255,9 @@ export default function App() {
       }
       // Global explainability is intentionally fetched on demand (user clicks),
       // to keep dataset loading under control.
+      if (result.model_compatible) {
+        getDomainXaiProfile(datasetId).then(setXaiProfile).catch(() => setXaiProfile(null))
+      }
     } catch (e) {
       setError(e.message)
       setRows([])
@@ -256,6 +271,7 @@ export default function App() {
     setError('')
     setLoading(true)
     setShowDatasetPicker(false)
+    setXaiProfile(null)
     try {
       const result = await loadRecentUpload(uploadId)
       setColumns(result.columns || DEFAULT_FEATURE_COLS)
@@ -284,6 +300,7 @@ export default function App() {
     setError('')
     setLoading(true)
     setShowDatasetPicker(false)
+    setXaiProfile(null)
     try {
       const u = await uploadCsv(f)
       if (!u.ok && u.errors?.length) throw new Error(u.errors.join('; '))
@@ -440,7 +457,7 @@ export default function App() {
     setShowTrainingWizard(false)
   }
 
-  const runDecision = useCallback(async (row, isWhatIf = false) => {
+  const runDecision = useCallback(async (row) => {
     setDeciding(true)
     setError('')
     try {
@@ -606,7 +623,7 @@ export default function App() {
 
   const finishTour = () => {
     setTourStep(null)
-    try { localStorage.setItem('prism_tour_done', 'true') } catch (_) {}
+    try { localStorage.setItem('prism_tour_done', 'true') } catch (e) { void e }
   }
 
   const handleModeChange = (mode) => {
@@ -666,7 +683,7 @@ export default function App() {
 
   // Persist bookmarks
   useEffect(() => {
-    try { localStorage.setItem('prism_bookmarks', JSON.stringify(bookmarks)) } catch (_) {}
+    try { localStorage.setItem('prism_bookmarks', JSON.stringify(bookmarks)) } catch (e) { void e }
   }, [bookmarks])
 
   // Apply pending bookmark after dataset loads
@@ -1169,6 +1186,27 @@ export default function App() {
                 )}
               </div>
             )}
+            {xaiProfile && (
+              <div className="limitations-callout" role="note" aria-label="Model limitations and safeguards">
+                <h4>Model limitations and safeguards</h4>
+                <p className="muted">
+                  PRISM provides decision support, not final judgment. Use confidence, What-if checks, and these safeguards together.
+                </p>
+                <ul className="plain-language-bullets">
+                  {typeof xaiProfile?.calibration?.ece === 'number' && (
+                    <li>
+                      Reliability check (ECE): {xaiProfile.calibration.ece.toFixed(3)} (lower is better).
+                    </li>
+                  )}
+                  {Array.isArray(xaiProfile?.fairness?.sensitive_features) && xaiProfile.fairness.sensitive_features.length > 0 && (
+                    <li>
+                      Fairness diagnostics are enabled for: {xaiProfile.fairness.sensitive_features.join(', ')}.
+                    </li>
+                  )}
+                  <li>SHAP explains model behaviour for this case; it does not prove cause and effect.</li>
+                </ul>
+              </div>
+            )}
           </div>
         )}
         
@@ -1375,7 +1413,7 @@ export default function App() {
                                 {prediction.decision === '+' ? activeDataset?.positiveLabel || 'Approved' 
                                   : prediction.decision === '-' ? activeDataset?.negativeLabel || 'Rejected' 
                                   : prediction.decision}
-                                <span className="pred-conf">{((prediction.confidence ?? 0) * 100).toFixed(0)}%</span>
+                                <span className="pred-conf">{confidenceBandLabel(prediction.confidence)}</span>
                               </span>
                             ) : (
                               <span className="prediction-badge pending">...</span>

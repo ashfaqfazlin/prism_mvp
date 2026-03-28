@@ -1,14 +1,12 @@
 """Domain-aware SHAP explanations for PRISM multi-model support."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import shap
 
-from app.config import settings
 from app.services.domain_model_service import domain_model_service
 
 
@@ -36,26 +34,7 @@ class DomainExplainabilityService:
             return None
 
         # Load dataset for background
-        datasets_dir = settings.base_dir / "datasets"
-        filename_map = {
-            "uci_credit_approval": "uci_credit_approval.csv",
-            "german_credit": "german_credit.csv",
-            "taiwan_credit_card": "taiwan_credit_card.csv",
-            "heart_disease": "heart_disease.csv",
-            "diabetes": "diabetes.csv",
-            "breast_cancer": "breast_cancer.csv",
-            "bank_marketing": "bank_marketing.csv",
-            "student_performance": "student_performance.csv",
-            "hr_attrition": "hr_attrition.csv",
-            "insurance_coil": "insurance_coil.csv",
-            "recidivism_compas": "recidivism_compas.csv",
-        }
-        
-        filename = filename_map.get(domain_id)
-        if not filename:
-            return None
-            
-        dataset_path = datasets_dir / filename
+        dataset_path = domain.dataset_path
         if not dataset_path.exists():
             return None
 
@@ -161,22 +140,8 @@ class DomainExplainabilityService:
         if domain is None:
             return {"feature_names": [], "mean_abs_shap": [], "feature_labels": {}, "sample_size": 0}
 
-        datasets_dir = settings.base_dir / "datasets"
-        filename_map = {
-            "uci_credit_approval": "uci_credit_approval.csv",
-            "german_credit": "german_credit.csv",
-            "taiwan_credit_card": "taiwan_credit_card.csv",
-            "heart_disease": "heart_disease.csv",
-            "diabetes": "diabetes.csv",
-            "breast_cancer": "breast_cancer.csv",
-            "bank_marketing": "bank_marketing.csv",
-            "student_performance": "student_performance.csv",
-            "hr_attrition": "hr_attrition.csv",
-            "insurance_coil": "insurance_coil.csv",
-            "recidivism_compas": "recidivism_compas.csv",
-        }
-        filename = filename_map.get(domain_id)
-        if not filename or not (datasets_dir / filename).exists():
+        dataset_path = domain.dataset_path
+        if not dataset_path.exists():
             return {"feature_names": [], "mean_abs_shap": [], "feature_labels": domain.feature_labels or {}, "sample_size": 0}
 
         def _decode_shap_feature_name(encoded_name: str) -> str:
@@ -193,7 +158,7 @@ class DomainExplainabilityService:
         try:
             # Read only a bounded sample to keep this endpoint responsive.
             n = max(1, int(sample_size))
-            df = pd.read_csv(datasets_dir / filename, nrows=n)
+            df = pd.read_csv(dataset_path, nrows=n)
             feature_cols = [c for c in domain.feature_cols if c in df.columns]
             df = df[feature_cols].replace("?", np.nan)
             for c in domain.numeric_cols:

@@ -7,6 +7,7 @@ from .explanation_layer import (
     counterfactual_preview,
     get_feature_ranges,
 )
+from .xai_contract_service import build_explanation_taxonomy
 
 __all__ = [
     "data_service",
@@ -16,4 +17,5 @@ __all__ = [
     "uncertainty_stability",
     "counterfactual_preview",
     "get_feature_ranges",
+    "build_explanation_taxonomy",
 ]

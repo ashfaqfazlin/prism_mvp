@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
@@ -29,9 +30,10 @@ class Settings(BaseSettings):
     # Reproducibility (e.g. for model/training)
     random_seed: int = 42
     
-    class Config:
-        env_prefix = "PRISM_"
-        env_file = ".env"
+    model_config = ConfigDict(
+        env_prefix="PRISM_",
+        env_file=".env",
+    )
 
 
 settings = Settings()

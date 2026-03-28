@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -19,7 +20,15 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import (
+    accuracy_score,
+    brier_score_loss,
+    classification_report,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 # Add backend root to path
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,37 +36,102 @@ sys.path.insert(0, str(ROOT))
 
 from app.domain_config import DOMAIN_REGISTRY, DomainConfig, is_model_trained
 
-DATASETS_DIR = ROOT / "datasets"
-
-
 def load_dataset(domain: DomainConfig) -> pd.DataFrame:
     """Load dataset for a domain."""
-    # Map domain ID to dataset filename
-    filename_map = {
-        "uci_credit_approval": "uci_credit_approval.csv",
-        "german_credit": "german_credit.csv",
-        "taiwan_credit_card": "taiwan_credit_card.csv",
-        "heart_disease": "heart_disease.csv",
-        "diabetes": "diabetes.csv",
-        "breast_cancer": "breast_cancer.csv",
-        "bank_marketing": "bank_marketing.csv",
-        "student_performance": "student_performance.csv",
-        "hr_attrition": "hr_attrition.csv",
-        "insurance_coil": "insurance_coil.csv",
-        "recidivism_compas": "recidivism_compas.csv",
-    }
-    
-    filename = filename_map.get(domain.id)
-    if not filename:
-        raise ValueError(f"No dataset file mapped for domain: {domain.id}")
-    
-    filepath = DATASETS_DIR / filename
+    filepath = domain.dataset_path
     if not filepath.exists():
         raise FileNotFoundError(f"Dataset not found: {filepath}")
     
     df = pd.read_csv(filepath)
-    print(f"  Loaded {len(df)} rows from {filename}")
+    print(f"  Loaded {len(df)} rows from {filepath.name}")
     return df
+
+
+def _calibration_profile(y_true: np.ndarray, p_pos: np.ndarray, bins: int = 10) -> dict:
+    """Compute reliability stats and expected calibration error (ECE)."""
+    y_true = np.asarray(y_true).astype(int)
+    p_pos = np.asarray(p_pos).astype(float)
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    rows = []
+    ece = 0.0
+    n = len(p_pos)
+    for i in range(bins):
+        lo = edges[i]
+        hi = edges[i + 1]
+        if i == bins - 1:
+            mask = (p_pos >= lo) & (p_pos <= hi)
+        else:
+            mask = (p_pos >= lo) & (p_pos < hi)
+        c = int(mask.sum())
+        if c == 0:
+            continue
+        conf = float(p_pos[mask].mean())
+        acc = float(y_true[mask].mean())
+        frac = c / max(n, 1)
+        ece += abs(conf - acc) * frac
+        rows.append(
+            {
+                "bin": i,
+                "lower": float(lo),
+                "upper": float(hi),
+                "count": c,
+                "mean_confidence": conf,
+                "empirical_accuracy": acc,
+            }
+        )
+    return {"bins": rows, "ece": float(ece)}
+
+
+def _fairness_profile(
+    X_test_raw: pd.DataFrame, y_true: np.ndarray, y_pred: np.ndarray, domain: DomainConfig
+) -> dict:
+    """Basic group fairness diagnostics (descriptive, not causal)."""
+    y_true = np.asarray(y_true).astype(int)
+    y_pred = np.asarray(y_pred).astype(int)
+    sensitive = [c for c in (domain.sensitive_features or []) if c in X_test_raw.columns]
+    out: dict[str, Any] = {"sensitive_features": sensitive, "groups": {}, "notes": []}
+    if not sensitive:
+        out["notes"].append("No sensitive features configured for this domain.")
+        return out
+
+    for col in sensitive:
+        s = X_test_raw[col].astype(str).fillna("Unknown")
+        groups = sorted(s.unique().tolist())
+        rows = []
+        for g in groups:
+            m = (s == g).to_numpy()
+            c = int(m.sum())
+            if c == 0:
+                continue
+            yt = y_true[m]
+            yp = y_pred[m]
+            tp = int(((yp == 1) & (yt == 1)).sum())
+            tn = int(((yp == 0) & (yt == 0)).sum())
+            fp = int(((yp == 1) & (yt == 0)).sum())
+            fn = int(((yp == 0) & (yt == 1)).sum())
+            rows.append(
+                {
+                    "group": g,
+                    "count": c,
+                    "positive_rate": float((yp == 1).mean()),
+                    "accuracy": float((yp == yt).mean()),
+                    "tpr": float(tp / max(tp + fn, 1)),
+                    "fpr": float(fp / max(fp + tn, 1)),
+                }
+            )
+        if rows:
+            pr = [r["positive_rate"] for r in rows]
+            tpr = [r["tpr"] for r in rows]
+            out["groups"][col] = {
+                "rows": rows,
+                "demographic_parity_gap": float(max(pr) - min(pr)),
+                "tpr_gap": float(max(tpr) - min(tpr)),
+            }
+
+    out["notes"].append(
+        "Fairness diagnostics are descriptive and should be interpreted with domain context."
+    )
+    return out
 
 
 def prepare_data(df: pd.DataFrame, domain: DomainConfig) -> tuple[pd.DataFrame, pd.Series]:
@@ -209,7 +283,18 @@ def train_domain(domain: DomainConfig, force: bool = False) -> dict:
     
     # Evaluate
     y_pred = model.predict(X_test_t)
+    y_prob = model.predict_proba(X_test_t)[:, 1]
     accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, zero_division=0)
+    recall = recall_score(y_test, y_pred, zero_division=0)
+    f1 = f1_score(y_test, y_pred, zero_division=0)
+    brier = brier_score_loss(y_test, y_prob)
+    try:
+        auc = roc_auc_score(y_test, y_prob)
+    except Exception:
+        auc = None
+    calibration = _calibration_profile(y_test.to_numpy(), y_prob, bins=10)
+    fairness = _fairness_profile(X_test, y_test.to_numpy(), y_pred, domain)
     print(f"  Test accuracy: {accuracy:.4f}")
     print(classification_report(y_test, y_pred, 
                                 target_names=[domain.negative_label, domain.positive_label]))
@@ -227,6 +312,14 @@ def train_domain(domain: DomainConfig, force: bool = False) -> dict:
         "negative_label": domain.negative_label,
         "feature_labels": domain.feature_labels,
         "test_accuracy": accuracy,
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "brier_score": float(brier),
+        "roc_auc": float(auc) if auc is not None else None,
+        "calibration": calibration,
+        "fairness": fairness,
+        "sensitive_features": domain.sensitive_features,
     }
     
     joblib.dump({"preproc": preproc, "meta": meta}, domain.preprocessing_path)
@@ -235,6 +328,10 @@ def train_domain(domain: DomainConfig, force: bool = False) -> dict:
     # Save meta as JSON for inspection
     with open(domain.artifacts_dir / "meta.json", "w") as f:
         json.dump(meta, f, indent=2)
+    with open(domain.calibration_path, "w") as f:
+        json.dump(calibration, f, indent=2)
+    with open(domain.fairness_path, "w") as f:
+        json.dump(fairness, f, indent=2)
     
     print(f"  Saved artifacts to {domain.artifacts_dir}")
     

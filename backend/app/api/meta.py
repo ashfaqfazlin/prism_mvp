@@ -63,6 +63,11 @@ def api_meta() -> dict:
                 "DELETE /api/datasets/upload/{upload_id}",
             ],
             "export": ["POST /api/export", "POST /api/export/bulk"],
+            "xai_diagnostics": [
+                "GET /api/domains/{domain_id}/calibration",
+                "GET /api/domains/{domain_id}/fairness",
+                "GET /api/domains/{domain_id}/xai-profile",
+            ],
             "legacy": ["GET /api/feature-ranges", "GET /api/decision-factor-ranges", "POST /api/predict"],
         },
     }
